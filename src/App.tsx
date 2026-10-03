@@ -1,3 +1,4 @@
+
 import { useState } from 'react'
 import './App.css'
 
@@ -27,8 +28,10 @@ type Movie = {
 type Page = 'landing' | 'genres' | 'questionnaire' | 'result'
 type RecommendationMode = 'genres' | 'personalized'
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
+
 const initialAnswers: Answers = {
-  mood: 'Unusual and unpredictable',
+  mood: '',
   era: '',
   acclaim: '',
   styles: [],
@@ -132,13 +135,15 @@ function App() {
   const [step, setStep] = useState(0)
   const [answers, setAnswers] = useState<Answers>(initialAnswers)
   const [actorInput, setActorInput] = useState('')
-  const [completed, setCompleted] = useState(false)
 
   const [recommendationMode, setRecommendationMode] =
       useState<RecommendationMode>('genres')
   const [movies, setMovies] = useState<Movie[]>([])
   const [loading, setLoading] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState('')
+  const [pageNumber, setPageNumber] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
 
   const toggleGenre = (genre: string) => {
     setSelectedGenres((previous) =>
@@ -156,7 +161,6 @@ function App() {
           : previous.styles,
     }))
     setStep(0)
-    setCompleted(false)
     setRecommendationMode('personalized')
     setPage('questionnaire')
   }
@@ -179,14 +183,12 @@ function App() {
 
   const addActor = () => {
     const name = actorInput.trim()
-
     if (!name || answers.actors.includes(name)) return
 
     setAnswers((previous) => ({
       ...previous,
       actors: [...previous.actors, name],
     }))
-
     setActorInput('')
   }
 
@@ -197,45 +199,57 @@ function App() {
     }))
   }
 
-  const startSearch = async (mode: RecommendationMode) => {
+  const getRequestBody = (
+      mode: RecommendationMode,
+      answersOverride: Answers = answers,
+  ) =>
+      mode === 'genres'
+          ? {
+            mode,
+            genres: selectedGenres,
+          }
+          : {
+            mode,
+            genres: answersOverride.styles,
+            mood: answersOverride.mood,
+            era: answersOverride.era,
+            acclaim: answersOverride.acclaim,
+            origin: answersOverride.origin,
+            runtime: answersOverride.runtime,
+            pacing: answersOverride.pacing,
+            actors: answersOverride.actors,
+          }
+
+  const startSearch = async (
+      mode: RecommendationMode,
+      answersOverride: Answers = answers,
+  ) => {
     setRecommendationMode(mode)
     setPage('result')
     setLoading(true)
+    setLoadingMore(false)
     setError('')
     setMovies([])
-
-    const requestBody =
-        mode === 'genres'
-            ? {
-              mode,
-              genres: selectedGenres,
-            }
-            : {
-              mode,
-              genres: answers.styles,
-              mood: answers.mood,
-              era: answers.era,
-              acclaim: answers.acclaim,
-              origin: answers.origin,
-              runtime: answers.runtime,
-              pacing: answers.pacing,
-              actors: answers.actors,
-            }
+    setPageNumber(1)
+    setTotalPages(1)
 
     try {
       const response = await fetch(
-          'http://localhost:3000/api/recommendations',
+          `${API_URL}/api/recommendations`,
           {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(requestBody),
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              ...getRequestBody(mode, answersOverride),
+              page: 1,
+            }),
           },
       )
 
       const data = (await response.json()) as {
         results?: Movie[]
+        page?: number
+        totalPages?: number
         error?: string
       }
 
@@ -244,6 +258,8 @@ function App() {
       }
 
       setMovies(data.results ?? [])
+      setPageNumber(data.page ?? 1)
+      setTotalPages(data.totalPages ?? 1)
     } catch (err) {
       setError(
           err instanceof Error
@@ -255,21 +271,71 @@ function App() {
     }
   }
 
+  const loadMore = async () => {
+    if (loadingMore || loading || pageNumber >= totalPages) return
+
+    const nextPage = pageNumber + 1
+    setLoadingMore(true)
+    setError('')
+
+    try {
+      const response = await fetch(
+          `${API_URL}/api/recommendations`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              ...getRequestBody(recommendationMode),
+              page: nextPage,
+            }),
+          },
+      )
+
+      const data = (await response.json()) as {
+        results?: Movie[]
+        page?: number
+        totalPages?: number
+        error?: string
+      }
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Could not load more movies.')
+      }
+
+      setMovies((previous) => {
+        const existingIds = new Set(previous.map((movie) => movie.id))
+        const newMovies = (data.results ?? []).filter(
+            (movie) => !existingIds.has(movie.id),
+        )
+        return [...previous, ...newMovies]
+      })
+
+      setPageNumber(data.page ?? nextPage)
+      setTotalPages(data.totalPages ?? totalPages)
+    } catch (err) {
+      setError(
+          err instanceof Error
+              ? err.message
+              : 'Could not load more movies.',
+      )
+    } finally {
+      setLoadingMore(false)
+    }
+  }
+
   const startGenreSearch = () => startSearch('genres')
   const startPersonalizedSearch = () => startSearch('personalized')
 
   const next = () => {
     if (step === questions.length - 1) {
-      setCompleted(true)
+      startPersonalizedSearch()
     } else {
       setStep((previous) => previous + 1)
     }
   }
 
   const back = () => {
-    if (completed) {
-      setCompleted(false)
-    } else if (step === 0) {
+    if (step === 0) {
       setPage('genres')
     } else {
       setStep((previous) => Math.max(0, previous - 1))
@@ -278,23 +344,26 @@ function App() {
 
   const skip = () => {
     if (step === 0) {
-      updateAnswer('mood', 'No preference')
+      updateAnswer('mood', '')
     } else if (step === 1) {
-      updateAnswer('era', 'No preference')
+      updateAnswer('era', '')
     } else if (step === 2) {
-      updateAnswer('acclaim', 'No preference')
+      updateAnswer('acclaim', '')
     } else if (step === 3) {
       setAnswers((previous) => ({ ...previous, styles: [] }))
     } else if (step === 4) {
-      updateAnswer('origin', 'No preference')
+      updateAnswer('origin', '')
     } else if (step === 5) {
       setAnswers((previous) => ({
         ...previous,
-        runtime: 'No preference',
-        pacing: 'No preference',
+        runtime: '',
+        pacing: '',
       }))
     } else if (step === 6) {
-      setAnswers((previous) => ({ ...previous, actors: [] }))
+      const answersWithoutActors = { ...answers, actors: [] }
+      setAnswers(answersWithoutActors)
+      startSearch('personalized', answersWithoutActors)
+      return
     }
 
     next()
@@ -306,11 +375,13 @@ function App() {
     setAnswers(initialAnswers)
     setSelectedGenres([])
     setActorInput('')
-    setCompleted(false)
     setRecommendationMode('genres')
     setMovies([])
     setError('')
     setLoading(false)
+    setLoadingMore(false)
+    setPageNumber(1)
+    setTotalPages(1)
   }
 
   const scalarKeys = [
@@ -350,17 +421,6 @@ function App() {
         ))}
       </div>
   )
-
-  const answerRows: [string, string][] = [
-    ['Mood', answers.mood],
-    ['Era', answers.era],
-    ['Recognition', answers.acclaim],
-    ['Genres', answers.styles.join(', ') || 'No preference'],
-    ['Origin', answers.origin],
-    ['Runtime', answers.runtime],
-    ['Pacing', answers.pacing],
-    ['Actors / actresses', answers.actors.join(', ') || 'No preference'],
-  ]
 
   if (page === 'landing') {
     return (
@@ -471,7 +531,7 @@ function App() {
                     ? 'Finding movies that match your preferences…'
                     : error
                         ? 'We could not retrieve recommendations.'
-                        : `${movies.length} movies found`}
+                        : `${movies.length} movies loaded`}
               </p>
             </div>
 
@@ -482,7 +542,7 @@ function App() {
                 </div>
             )}
 
-            {!loading && error && (
+            {!loading && error && movies.length === 0 && (
                 <div className="result-state error-message" role="alert">
                   <h3>Something went wrong</h3>
                   <p>{error}</p>
@@ -506,10 +566,23 @@ function App() {
                 </div>
             )}
 
-            {!loading && !error && movies.length > 0 && (
+            {movies.length > 0 && (
                 <div className="movie-grid">
                   {movies.map((movie) => (
+
                       <article className="movie-card" key={movie.id}>
+                        <div
+                            className="movie-ambient"
+                            aria-hidden="true"
+                            style={{
+                              backgroundImage: movie.backdropUrl
+                                  ? `url("${movie.backdropUrl}")`
+                                  : movie.posterUrl
+                                      ? `url("${movie.posterUrl}")`
+                                      : 'none',
+                            }}
+                        />
+
                         {movie.posterUrl ? (
                             <img
                                 className="movie-poster"
@@ -526,12 +599,11 @@ function App() {
                         <div className="movie-info">
                           <h3>{movie.title}</h3>
                           <p className="movie-meta">
-                            {movie.releaseDate?.slice(0, 4) ||
-                                'Release year unknown'}
-                            <span aria-hidden="true"> · </span>
+                            {movie.releaseDate?.slice(0, 4) || 'Release year unknown'}
+                            {' · '}
                             <span className="movie-rating">
-                        ★ {Number(movie.rating || 0).toFixed(1)}
-                      </span>
+        ★ {Number(movie.rating || 0).toFixed(1)}
+      </span>
                           </p>
                           <p className="movie-overview">
                             {movie.overview || 'No description available.'}
@@ -546,7 +618,37 @@ function App() {
                           </a>
                         </div>
                       </article>
+
                   ))}
+                </div>
+            )}
+
+            {error && movies.length > 0 && (
+                <p className="load-more-error" role="alert">
+                  {error}
+                </p>
+            )}
+
+            {!loading && !error && pageNumber < totalPages && (
+                <div className="load-more-container">
+                  <button
+                      type="button"
+                      className="next-button load-more-button"
+                      onClick={loadMore}
+                      disabled={loadingMore}
+                  >
+                    {loadingMore ? 'Loading…' : 'Load more movies'}
+                  </button>
+                  <p className="question-hint">
+                    Showing {movies.length} movies
+                  </p>
+                </div>
+            )}
+
+            {loadingMore && (
+                <div className="result-state" role="status">
+                  <span className="loading-spinner" />
+                  <p>Loading more movies…</p>
                 </div>
             )}
 
@@ -595,191 +697,148 @@ function App() {
             <h1>Should I Watch This?</h1>
           </header>
 
-          {!completed ? (
-              <>
-                <div className="progress-info">
-              <span>
-                QUESTION {step + 1} OF {questions.length}
-              </span>
-                  <span>
-                {Math.round(((step + 1) / questions.length) * 100)}%
-              </span>
-                </div>
+          <div className="progress-info">
+          <span>
+            QUESTION {step + 1} OF {questions.length}
+          </span>
+            <span>
+            {Math.round(((step + 1) / questions.length) * 100)}%
+          </span>
+          </div>
 
-                <div
-                    className="progress-track"
-                    role="progressbar"
-                    aria-label="Questionnaire progress"
-                    aria-valuenow={step + 1}
-                    aria-valuemin={1}
-                    aria-valuemax={questions.length}
-                >
-                  <div
-                      className="progress-fill"
-                      style={{
-                        width: `${((step + 1) / questions.length) * 100}%`,
-                      }}
-                  />
-                </div>
+          <div
+              className="progress-track"
+              role="progressbar"
+              aria-label="Questionnaire progress"
+              aria-valuenow={step + 1}
+              aria-valuemin={1}
+              aria-valuemax={questions.length}
+          >
+            <div
+                className="progress-fill"
+                style={{
+                  width: `${((step + 1) / questions.length) * 100}%`,
+                }}
+            />
+          </div>
 
-                <div className="question-content">
-                  <span className="step-label">STEP {step + 1}</span>
-                  <h2>{questions[step]}</h2>
-                  <p className="question-hint">
-                    {step === 3
-                        ? 'Choose as many genres as you like.'
-                        : step === 6
-                            ? 'Add any performers you enjoy, or skip this step.'
-                            : 'Choose one option or skip if you have no preference.'}
+          <div className="question-content">
+            <span className="step-label">STEP {step + 1}</span>
+            <h2>{questions[step]}</h2>
+            <p className="question-hint">
+              {step === 3
+                  ? 'Choose as many genres as you like.'
+                  : step === 6
+                      ? 'Add any performers you enjoy, or skip this step.'
+                      : 'Choose one option or skip if you have no preference.'}
+            </p>
+
+            {step === 0 && renderOptions(options.mood)}
+            {step === 1 && renderOptions(options.era)}
+            {step === 2 && renderOptions(options.acclaim)}
+            {step === 3 && renderOptions(options.styles)}
+            {step === 4 && renderOptions(options.origin)}
+
+            {step === 5 && (
+                <>
+                  <h3 className="sub-question">Preferred runtime</h3>
+                  {renderOptions(options.runtime)}
+
+                  <h3 className="sub-question">Preferred pacing</h3>
+                  <div className="options-grid">
+                    {options.pacing.map((item) => (
+                        <Option
+                            key={item}
+                            label={item}
+                            selected={answers.pacing === item}
+                            onClick={() => updateAnswer('pacing', item)}
+                        />
+                    ))}
+                  </div>
+                </>
+            )}
+
+            {step === 6 && (
+                <div className="actor-section">
+                  <div className="actor-entry">
+                    <input
+                        value={actorInput}
+                        onChange={(event) => setActorInput(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            event.preventDefault()
+                            addActor()
+                          }
+                        }}
+                        placeholder="Type an actor or actress name"
+                        aria-label="Actor or actress name"
+                        maxLength={100}
+                    />
+                    <button
+                        type="button"
+                        className="add-button"
+                        onClick={addActor}
+                        disabled={!actorInput.trim()}
+                    >
+                      Add
+                    </button>
+                  </div>
+
+                  {answers.actors.length > 0 && (
+                      <div className="actor-chips">
+                        {answers.actors.map((actor) => (
+                            <button
+                                type="button"
+                                className="actor-chip"
+                                key={actor}
+                                onClick={() => removeActor(actor)}
+                                aria-label={`Remove ${actor}`}
+                            >
+                              {actor} <span>×</span>
+                            </button>
+                        ))}
+                      </div>
+                  )}
+
+                  <p className="actor-note">
+                    Results will only include movies featuring the actors
+                    you add, including credited supporting roles.
                   </p>
-
-                  {step === 0 && renderOptions(options.mood)}
-                  {step === 1 && renderOptions(options.era)}
-                  {step === 2 && renderOptions(options.acclaim)}
-                  {step === 3 && renderOptions(options.styles)}
-                  {step === 4 && renderOptions(options.origin)}
-
-                  {step === 5 && (
-                      <>
-                        <h3 className="sub-question">Preferred runtime</h3>
-                        {renderOptions(options.runtime)}
-
-                        <h3 className="sub-question">Preferred pacing</h3>
-                        <div className="options-grid">
-                          {options.pacing.map((item) => (
-                              <Option
-                                  key={item}
-                                  label={item}
-                                  selected={answers.pacing === item}
-                                  onClick={() => updateAnswer('pacing', item)}
-                              />
-                          ))}
-                        </div>
-                      </>
-                  )}
-
-                  {step === 6 && (
-                      <div className="actor-section">
-                        <div className="actor-entry">
-                          <input
-                              value={actorInput}
-                              onChange={(event) => setActorInput(event.target.value)}
-                              onKeyDown={(event) => {
-                                if (event.key === 'Enter') {
-                                  event.preventDefault()
-                                  addActor()
-                                }
-                              }}
-                              placeholder="Type an actor or actress name"
-                              aria-label="Actor or actress name"
-                              maxLength={100}
-                          />
-                          <button
-                              type="button"
-                              className="add-button"
-                              onClick={addActor}
-                              disabled={!actorInput.trim()}
-                          >
-                            Add
-                          </button>
-                        </div>
-
-                        {answers.actors.length > 0 && (
-                            <div className="actor-chips">
-                              {answers.actors.map((actor) => (
-                                  <button
-                                      type="button"
-                                      className="actor-chip"
-                                      key={actor}
-                                      onClick={() => removeActor(actor)}
-                                      aria-label={`Remove ${actor}`}
-                                  >
-                                    {actor} <span>×</span>
-                                  </button>
-                              ))}
-                            </div>
-                        )}
-
-                        <p className="actor-note">
-                          Actor-name filtering is not connected yet. You can enter
-                          names here and review them with your preferences.
-                        </p>
-                      </div>
-                  )}
                 </div>
+            )}
+          </div>
 
-                <footer className="navigation">
-                  <button
-                      type="button"
-                      className="back-button"
-                      onClick={back}
-                  >
-                    Back
-                  </button>
-                  <button
-                      type="button"
-                      className="skip-button"
-                      onClick={skip}
-                  >
-                    Skip
-                  </button>
-                  <button
-                      type="button"
-                      className="next-button"
-                      onClick={next}
-                  >
-                    {step === questions.length - 1
-                        ? 'Review answers'
-                        : 'Next'}
-                  </button>
-                </footer>
-              </>
-          ) : (
-              <div className="summary">
-                <span className="step-label">YOUR PREFERENCES</span>
-                <h2>Ready to find a movie?</h2>
-                <p className="question-hint">
-                  Here’s what we’ll use to find your recommendations.
-                </p>
-
-                <div className="summary-list">
-                  {answerRows.map(([label, value]) => (
-                      <div className="summary-row" key={label}>
-                        <span>{label}</span>
-                        <strong>{value || 'No preference'}</strong>
-                      </div>
-                  ))}
-                </div>
-
-                <footer className="navigation">
-                  <button
-                      type="button"
-                      className="back-button"
-                      onClick={back}
-                  >
-                    Back
-                  </button>
-                  <button
-                      type="button"
-                      className="next-button"
-                      onClick={startPersonalizedSearch}
-                  >
-                    Find my movie
-                  </button>
-                </footer>
-
-                <button
-                    type="button"
-                    className="questionnaire-entry"
-                    onClick={restart}
-                >
-                  Start over
-                </button>
-              </div>
-          )}
+          <footer className="navigation">
+            <button
+                type="button"
+                className="back-button"
+                onClick={back}
+            >
+              Back
+            </button>
+            <button
+                type="button"
+                className="skip-button"
+                onClick={skip}
+            >
+              Skip
+            </button>
+            <button
+                type="button"
+                className="next-button"
+                onClick={next}
+            >
+              {step === questions.length - 1
+                  ? 'Find my movie'
+                  : 'Next'}
+            </button>
+          </footer>
         </section>
       </main>
   )
 }
 
+
+
 export default App
+

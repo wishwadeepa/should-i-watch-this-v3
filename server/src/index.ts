@@ -1,3 +1,4 @@
+
 import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
@@ -11,14 +12,23 @@ const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 
-app.use(helmet());
+const allowedOrigins = [
+    "http://localhost:5173",
+    process.env.FRONTEND_URL,
+].filter((origin): origin is string => Boolean(origin));
 
+app.use(helmet());
 app.use(
     cors({
-        origin: "http://localhost:5173",
+        origin: (origin, callback) => {
+            if (!origin || allowedOrigins.includes(origin)) {
+                callback(null, true);
+            } else {
+                callback(new Error("Origin not allowed by CORS"));
+            }
+        },
     }),
 );
-
 app.use(express.json({ limit: "10kb" }));
 
 app.use(
@@ -44,7 +54,18 @@ const recommendationSchema = z.object({
     runtime: z.string().max(100).optional(),
     pacing: z.string().max(100).optional(),
     actors: z.array(z.string().max(100)).max(10).default([]),
+    page: z.number().int().min(1).max(500).default(1),
 });
+
+type TMDbPerson = {
+    id: number;
+    name: string;
+    popularity: number;
+};
+
+type TMDbPersonSearchResponse = {
+    results?: TMDbPerson[];
+};
 
 type TMDbMovie = {
     id: number;
@@ -74,10 +95,7 @@ const genreIds: Record<string, number> = {
     Mystery: 9648,
     Romance: 10749,
     "Science fiction": 878,
-    "TV Movie": 10770,
     Thriller: 53,
-    War: 10752,
-    Western: 37,
 };
 
 const eraRanges: Record<string, [number, number]> = {
@@ -96,6 +114,43 @@ const originCodes: Record<string, string> = {
     "Japanese cinema": "JP",
     "European cinema": "FR|DE|IT|ES|GB",
 };
+
+/**
+ * Resolve a user-entered actor name to a TMDb person ID.
+ * Prefer an exact case-insensitive name match; otherwise use TMDb's
+ * most relevant search result. The returned ID is used for cast filtering.
+ */
+async function resolveActorId(name: string): Promise<number | null> {
+    const params = new URLSearchParams({
+        api_key: TMDB_API_KEY!,
+        query: name,
+        include_adult: "false",
+        page: "1",
+    });
+
+    const response = await fetch(
+        `https://api.themoviedb.org/3/search/person?${params.toString()}`,
+    );
+
+    if (!response.ok) {
+        throw new Error(`TMDb person search failed with status ${response.status}`);
+    }
+
+    const data = (await response.json()) as TMDbPersonSearchResponse;
+    const people = data.results ?? [];
+
+    if (people.length === 0) return null;
+
+    const normalizedName = name.trim().toLocaleLowerCase();
+    const exactMatches = people.filter(
+        (person) => person.name.trim().toLocaleLowerCase() === normalizedName,
+    );
+
+    const candidates = exactMatches.length > 0 ? exactMatches : people;
+    candidates.sort((a, b) => b.popularity - a.popularity);
+
+    return candidates[0]?.id ?? null;
+}
 
 app.post("/api/recommendations", async (req, res) => {
     const parsed = recommendationSchema.safeParse(req.body);
@@ -120,7 +175,7 @@ app.post("/api/recommendations", async (req, res) => {
         language: "en-US",
         sort_by: "popularity.desc",
         include_adult: "false",
-        page: "1",
+        page: String(preferences.page),
     });
 
     const selectedGenreIds = preferences.genres
@@ -133,7 +188,6 @@ app.post("/api/recommendations", async (req, res) => {
 
     if (preferences.era && eraRanges[preferences.era]) {
         const [startYear, endYear] = eraRanges[preferences.era];
-
         params.set("primary_release_date.gte", `${startYear}-01-01`);
         params.set("primary_release_date.lte", `${endYear}-12-31`);
     }
@@ -173,13 +227,38 @@ app.post("/api/recommendations", async (req, res) => {
     }
 
     try {
+        if (preferences.actors.length > 0) {
+            const resolvedActorIds = await Promise.all(
+                preferences.actors.map((actor) => resolveActorId(actor)),
+            );
+
+            const unresolvedActors = preferences.actors.filter(
+                (_actor, index) => resolvedActorIds[index] === null,
+            );
+
+            if (unresolvedActors.length > 0) {
+                return res.status(422).json({
+                    error: `Could not find actor or actress: ${unresolvedActors.join(", ")}. Check the spelling and try again.`,
+                });
+            }
+
+            // Pipe-separated cast IDs match movies featuring ANY selected actor.
+            // Supporting and minor credited cast roles are included by TMDb.
+            const castIds = resolvedActorIds.filter(
+                (id): id is number => id !== null,
+            );
+
+            if (castIds.length > 0) {
+                params.set("with_cast", castIds.join("|"));
+            }
+        }
+
         const response = await fetch(
             `https://api.themoviedb.org/3/discover/movie?${params.toString()}`,
         );
 
         if (!response.ok) {
             console.error("TMDb request failed:", response.status);
-
             return res.status(502).json({
                 error: "The movie service could not complete the request",
             });
@@ -187,6 +266,8 @@ app.post("/api/recommendations", async (req, res) => {
 
         const data = (await response.json()) as {
             results?: TMDbMovie[];
+            page?: number;
+            total_pages?: number;
             total_results?: number;
         };
 
@@ -208,17 +289,18 @@ app.post("/api/recommendations", async (req, res) => {
 
         return res.json({
             results: movies,
+            page: data.page ?? preferences.page,
+            totalPages: Math.min(data.total_pages ?? 1, 500),
             totalResults: data.total_results ?? movies.length,
         });
     } catch (error) {
         console.error("Recommendation request error:", error);
-
         return res.status(502).json({
             error: "Unable to connect to the movie service",
         });
     }
 });
 
-app.listen(PORT, () => {
-    console.log(`Backend running on http://localhost:${PORT}`);
+app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Backend running on port ${PORT}`);
 });
