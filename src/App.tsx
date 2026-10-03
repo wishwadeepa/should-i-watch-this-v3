@@ -107,27 +107,54 @@ const options = {
 
 const genreChoices = options.styles
 
+
 function Option({
                   label,
                   selected,
                   onClick,
+                  genreWave = false,
                 }: {
   label: string
   selected: boolean
   onClick: () => void
+  genreWave?: boolean
 }) {
+  const [wave, setWave] = useState({ x: 0, y: 0, id: 0 })
+
+  const handleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+    if (genreWave) {
+      const rect = event.currentTarget.getBoundingClientRect()
+      setWave({
+        x: event.clientX - rect.left,
+        y: event.clientY - rect.top,
+        id: wave.id + 1,
+      })
+    }
+    onClick()
+  }
+
   return (
       <button
           type="button"
-          className={`option ${selected ? 'selected' : ''}`}
+          className={`option ${selected ? 'selected' : ''} ${genreWave ? 'genre-wave-option' : ''}`}
           aria-pressed={selected}
-          onClick={onClick}
+          onClick={handleClick}
+          style={{
+            '--wave-x': `${wave.x}px`,
+            '--wave-y': `${wave.y}px`,
+          } as React.CSSProperties}
       >
-        <span>{label}</span>
-        <span className="option-check">{selected ? '✓' : ''}</span>
+        {genreWave && (
+            <span key={wave.id} className="genre-wave-ripple" />
+        )}
+        <span className="option-label">{label}</span>
+        {!genreWave && (
+            <span className="option-check">{selected ? '✓' : ''}</span>
+        )}
       </button>
   )
 }
+
 
 function App() {
   const [page, setPage] = useState<Page>('landing')
@@ -468,14 +495,17 @@ function App() {
             </div>
 
             <div className="genre-grid">
+
               {genreChoices.map((genre) => (
                   <Option
                       key={genre}
                       label={genre}
                       selected={selectedGenres.includes(genre)}
                       onClick={() => toggleGenre(genre)}
+                      genreWave
                   />
               ))}
+
             </div>
 
             <div className="genre-actions">

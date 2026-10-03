@@ -886,3 +886,112 @@ input:focus-visible {
     transition-duration: 0.01ms !important;
   }
 }
+
+
+/* Grainy purple click-origin wave for genre options */
+.genre-wave-option {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  border-radius: 16px;
+  background: rgba(23, 30, 48, 0.72);
+  transition:
+          border-color 350ms ease,
+          box-shadow 350ms ease,
+          transform 250ms ease;
+}
+
+.genre-wave-option::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  border-radius: inherit;
+  opacity: 0;
+  background:
+          repeating-radial-gradient(
+                  circle at 28% 35%,
+                  rgba(238, 216, 255, 0.14) 0 1px,
+                  transparent 2px 5px
+          ),
+          repeating-linear-gradient(
+                  125deg,
+                  rgba(220, 190, 255, 0.06) 0 1px,
+                  transparent 1px 3px
+          ),
+          linear-gradient(135deg, #50327e, #8055b9 50%, #49316e);
+  transition: opacity 450ms ease;
+}
+
+.genre-wave-option.selected {
+  border-color: rgba(197, 168, 255, 0.8);
+  box-shadow:
+          inset 0 0 20px rgba(197, 168, 255, 0.12),
+          0 0 20px rgba(137, 85, 220, 0.14);
+}
+
+.genre-wave-option.selected::before {
+  opacity: 1;
+}
+
+.genre-wave-option .option-label {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  text-align: center;
+  pointer-events: none;
+}
+
+.genre-wave-option .genre-wave-ripple {
+  position: absolute;
+  z-index: 1;
+  left: var(--wave-x, 50%);
+  top: var(--wave-y, 50%);
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  pointer-events: none;
+  background:
+          repeating-radial-gradient(
+                  circle,
+                  rgba(238, 216, 255, 0.28) 0 1px,
+                  rgba(183, 135, 245, 0.15) 2px 3px,
+                  transparent 4px 6px
+          ),
+          radial-gradient(circle, #b58ae9, #8154c2 55%, #573582);
+  transform: translate(-50%, -50%) scale(0);
+  animation: genre-wave-spread 750ms ease-out forwards;
+}
+
+@keyframes genre-wave-spread {
+  0% {
+    opacity: 0.95;
+    transform: translate(-50%, -50%) scale(0);
+  }
+  65% {
+    opacity: 0.65;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(32);
+  }
+}
+
+.genre-wave-option:hover {
+  border-color: rgba(197, 168, 255, 0.55);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .genre-wave-option,
+  .genre-wave-option::before {
+    transition: none;
+  }
+
+  .genre-wave-option .genre-wave-ripple {
+    animation-duration: 1ms;
+  }
+}
