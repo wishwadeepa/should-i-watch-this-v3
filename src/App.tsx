@@ -513,27 +513,21 @@ function App() {
         <main className="app">
           <section className="flow-panel results-panel">
             <header className="app-header">
-              <span className="eyebrow">YOUR PERSONAL MOVIE DISCOVERY</span>
-              <h1>Should I Watch This?</h1>
+              <span className="eyebrow">YOUR RECOMMENDATIONS</span>
+              <h1>Movies for you</h1>
             </header>
 
+
             <div className="flow-copy">
-              <span className="step-label">YOUR RECOMMENDATIONS</span>
-              <h2>
-                {recommendationMode === 'genres'
-                    ? selectedGenres.length
-                        ? selectedGenres.join(' · ')
-                        : 'Movies for you'
-                    : 'Your personalized picks'}
-              </h2>
               <p className="question-hint">
                 {loading
-                    ? 'Finding movies that match your preferences…'
+                    ? 'Finding movies that match your preferences...'
                     : error
                         ? 'We could not retrieve recommendations.'
                         : `${movies.length} movies loaded`}
               </p>
             </div>
+
 
             {loading && (
                 <div className="result-state" role="status">
