@@ -46,6 +46,7 @@ app.get("/api/health", (_req, res) => {
 
 const recommendationSchema = z.object({
     mode: z.enum(["genres", "personalized"]),
+    mediaType: z.enum(["movie", "tv"]).default("movie"),
     genres: z.array(z.string().max(50)).max(12).default([]),
     mood: z.string().max(100).optional(),
     era: z.string().max(100).optional(),
@@ -67,13 +68,15 @@ type TMDbPersonSearchResponse = {
     results?: TMDbPerson[];
 };
 
-type TMDbMovie = {
+type TMDbMedia = {
     id: number;
-    title: string;
+    title?: string;
+    name?: string;
     overview: string;
     poster_path: string | null;
     backdrop_path: string | null;
-    release_date: string;
+    release_date?: string;
+    first_air_date?: string;
     vote_average: number;
     vote_count: number;
     genre_ids: number[];
@@ -96,6 +99,25 @@ const genreIds: Record<string, number> = {
     Romance: 10749,
     "Science fiction": 878,
     Thriller: 53,
+};
+
+const tvGenreIds: Record<string, number> = {
+    Action: 10759,
+    Adventure: 10759,
+    Animation: 16,
+    Comedy: 35,
+    Crime: 80,
+    Documentary: 99,
+    Drama: 18,
+    Family: 10751,
+    Fantasy: 10765,
+    History: 10768,
+    Music: 10764,
+    Horror: 9648,
+    Romance: 18,
+    Thriller: 80,
+    Mystery: 9648,
+    "Science fiction": 10765,
 };
 
 const eraRanges: Record<string, [number, number]> = {
@@ -179,7 +201,7 @@ app.post("/api/recommendations", async (req, res) => {
     });
 
     const selectedGenreIds = preferences.genres
-        .map((genre) => genreIds[genre])
+        .map((genre) => (preferences.mediaType === "tv" ? tvGenreIds[genre] : genreIds[genre]))
         .filter((id): id is number => id !== undefined);
 
     if (selectedGenreIds.length > 0) {
@@ -188,8 +210,9 @@ app.post("/api/recommendations", async (req, res) => {
 
     if (preferences.era && eraRanges[preferences.era]) {
         const [startYear, endYear] = eraRanges[preferences.era];
-        params.set("primary_release_date.gte", `${startYear}-01-01`);
-        params.set("primary_release_date.lte", `${endYear}-12-31`);
+        const dateField = preferences.mediaType === "tv" ? "first_air_date" : "primary_release_date";
+        params.set(`${dateField}.gte`, `${startYear}-01-01`);
+        params.set(`${dateField}.lte`, `${endYear}-12-31`);
     }
 
     if (preferences.acclaim === "Highly rated by audiences") {
@@ -210,15 +233,15 @@ app.post("/api/recommendations", async (req, res) => {
         params.set("vote_count.lte", "500");
     }
 
-    if (preferences.runtime === "Under 90 minutes") {
+    if (preferences.mediaType === "movie" && preferences.runtime === "Under 90 minutes") {
         params.set("with_runtime.lte", "89");
-    } else if (preferences.runtime === "90–120 minutes") {
+    } else if (preferences.mediaType === "movie" && preferences.runtime === "90–120 minutes") {
         params.set("with_runtime.gte", "90");
         params.set("with_runtime.lte", "120");
-    } else if (preferences.runtime === "2–2.5 hours") {
+    } else if (preferences.mediaType === "movie" && preferences.runtime === "2–2.5 hours") {
         params.set("with_runtime.gte", "121");
         params.set("with_runtime.lte", "150");
-    } else if (preferences.runtime === "Over 2.5 hours") {
+    } else if (preferences.mediaType === "movie" && preferences.runtime === "Over 2.5 hours") {
         params.set("with_runtime.gte", "151");
     }
 
@@ -249,54 +272,54 @@ app.post("/api/recommendations", async (req, res) => {
             );
 
             if (castIds.length > 0) {
-                params.set("with_cast", castIds.join("|"));
+                params.set(preferences.mediaType === "tv" ? "with_people" : "with_cast", castIds.join("|"));
             }
         }
 
         const response = await fetch(
-            `https://api.themoviedb.org/3/discover/movie?${params.toString()}`,
+            `https://api.themoviedb.org/3/discover/${preferences.mediaType}?${params.toString()}`,
         );
 
         if (!response.ok) {
             console.error("TMDb request failed:", response.status);
             return res.status(502).json({
-                error: "The movie service could not complete the request",
+                error: `The ${preferences.mediaType === "tv" ? "TV" : "movie"} service could not complete the request`,
             });
         }
 
         const data = (await response.json()) as {
-            results?: TMDbMovie[];
+            results?: TMDbMedia[];
             page?: number;
             total_pages?: number;
             total_results?: number;
         };
 
-        const movies = (data.results ?? []).map((movie) => ({
-            id: movie.id,
-            title: movie.title,
-            overview: movie.overview,
-            posterUrl: movie.poster_path
-                ? `https://image.tmdb.org/t/p/w500${movie.poster_path}`
+        const recommendations = (data.results ?? []).map((item) => ({
+            id: item.id,
+            title: preferences.mediaType === "tv" ? (item.name ?? "Untitled series") : (item.title ?? "Untitled"),
+            overview: item.overview,
+            posterUrl: item.poster_path
+                ? `https://image.tmdb.org/t/p/w500${item.poster_path}`
                 : null,
-            backdropUrl: movie.backdrop_path
-                ? `https://image.tmdb.org/t/p/w1280${movie.backdrop_path}`
+            backdropUrl: item.backdrop_path
+                ? `https://image.tmdb.org/t/p/w1280${item.backdrop_path}`
                 : null,
-            releaseDate: movie.release_date,
-            rating: movie.vote_average,
-            voteCount: movie.vote_count,
-            genreIds: movie.genre_ids,
+            releaseDate: preferences.mediaType === "tv" ? (item.first_air_date ?? "") : (item.release_date ?? ""),
+            rating: item.vote_average,
+            voteCount: item.vote_count,
+            genreIds: item.genre_ids,
         }));
 
         return res.json({
-            results: movies,
+            results: recommendations,
             page: data.page ?? preferences.page,
             totalPages: Math.min(data.total_pages ?? 1, 500),
-            totalResults: data.total_results ?? movies.length,
+            totalResults: data.total_results ?? recommendations.length,
         });
     } catch (error) {
         console.error("Recommendation request error:", error);
         return res.status(502).json({
-            error: "Unable to connect to the movie service",
+            error: `Unable to connect to the ${preferences.mediaType === "tv" ? "TV" : "movie"} service`,
         });
     }
 });

@@ -13,7 +13,7 @@ type Answers = {
   actors: string[]
 }
 
-type Movie = {
+type RecommendationItem = {
   id: number
   title: string
   overview: string
@@ -27,6 +27,7 @@ type Movie = {
 
 type Page = 'landing' | 'genres' | 'questionnaire' | 'result'
 type RecommendationMode = 'genres' | 'personalized'
+type MediaType = 'movie' | 'tv'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
@@ -165,7 +166,8 @@ function App() {
 
   const [recommendationMode, setRecommendationMode] =
       useState<RecommendationMode>('genres')
-  const [movies, setMovies] = useState<Movie[]>([])
+  const [movies, setMovies] = useState<RecommendationItem[]>([])
+  const [mediaType, setMediaType] = useState<MediaType>('movie')
   const [loading, setLoading] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState('')
@@ -250,8 +252,10 @@ function App() {
   const startSearch = async (
       mode: RecommendationMode,
       answersOverride: Answers = answers,
+      targetMediaType: MediaType = mediaType,
   ) => {
     setRecommendationMode(mode)
+    setMediaType(targetMediaType)
     setPage('result')
     setLoading(true)
     setLoadingMore(false)
@@ -268,20 +272,21 @@ function App() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               ...getRequestBody(mode, answersOverride),
+              mediaType: targetMediaType,
               page: 1,
             }),
           },
       )
 
       const data = (await response.json()) as {
-        results?: Movie[]
+        results?: RecommendationItem[]
         page?: number
         totalPages?: number
         error?: string
       }
 
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to find movies.')
+        throw new Error(data.error || `Failed to find ${mediaType === 'movie' ? 'movies' : 'TV series'}.`)
       }
 
       setMovies(data.results ?? [])
@@ -313,13 +318,14 @@ function App() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               ...getRequestBody(recommendationMode),
+              mediaType,
               page: nextPage,
             }),
           },
       )
 
       const data = (await response.json()) as {
-        results?: Movie[]
+        results?: RecommendationItem[]
         page?: number
         totalPages?: number
         error?: string
@@ -403,6 +409,7 @@ function App() {
     setSelectedGenres([])
     setActorInput('')
     setRecommendationMode('genres')
+    setMediaType('movie')
     setMovies([])
     setError('')
     setLoading(false)
@@ -544,17 +551,21 @@ function App() {
           <section className="flow-panel results-panel">
             <header className="app-header">
               <span className="eyebrow">YOUR RECOMMENDATIONS</span>
-              <h1>Movies for you</h1>
+              <h1>Picked for you</h1>
             </header>
 
+            <div className="media-switch" role="group" aria-label="Recommendation type">
+              <button type="button" className={`media-switch-option ${mediaType === 'movie' ? 'active' : ''}`} aria-pressed={mediaType === 'movie'} onClick={() => mediaType !== 'movie' && startSearch(recommendationMode, answers, 'movie')}>Movies</button>
+              <button type="button" className={`media-switch-option ${mediaType === 'tv' ? 'active' : ''}`} aria-pressed={mediaType === 'tv'} onClick={() => mediaType !== 'tv' && startSearch(recommendationMode, answers, 'tv')}>TV Series</button>
+            </div>
 
             <div className="flow-copy">
               <p className="question-hint">
                 {loading
-                    ? 'Finding movies that match your preferences...'
+                    ? `Finding ${mediaType === 'movie' ? 'movies' : 'TV series'} that match your preferences...`
                     : error
                         ? 'We could not retrieve recommendations.'
-                        : `${movies.length} movies loaded`}
+                        : `${movies.length} ${mediaType === 'movie' ? 'movies' : 'TV series'} loaded`}
               </p>
             </div>
 
@@ -562,7 +573,7 @@ function App() {
             {loading && (
                 <div className="result-state" role="status">
                   <span className="loading-spinner" />
-                  <p>Finding movies for you…</p>
+                  <p>Finding {mediaType === 'movie' ? 'movies' : 'TV series'} for you…</p>
                 </div>
             )}
 
@@ -582,10 +593,10 @@ function App() {
 
             {!loading && !error && movies.length === 0 && (
                 <div className="result-state">
-                  <h3>No movies found</h3>
+                  <h3>No {mediaType === 'movie' ? 'movies' : 'TV series'} found</h3>
                   <p>
                     Try another genre or change your preferences to discover more
-                    movies.
+                    {mediaType === 'movie' ? ' movies.' : ' TV series.'}
                   </p>
                 </div>
             )}
@@ -634,11 +645,11 @@ function App() {
                           </p>
                           <a
                               className="movie-link"
-                              href={`https://www.themoviedb.org/movie/${movie.id}`}
+                              href={`https://www.themoviedb.org/${mediaType === 'movie' ? 'movie' : 'tv'}/${movie.id}`}
                               target="_blank"
                               rel="noreferrer"
                           >
-                            View movie <span aria-hidden="true">↗</span>
+                            View {mediaType === 'movie' ? 'movie' : 'series'} <span aria-hidden="true">↗</span>
                           </a>
                         </div>
                       </article>
@@ -661,10 +672,10 @@ function App() {
                       onClick={loadMore}
                       disabled={loadingMore}
                   >
-                    {loadingMore ? 'Loading…' : 'Load more movies'}
+                    {loadingMore ? 'Loading…' : `Load more ${mediaType === 'movie' ? 'movies' : 'series'}`}
                   </button>
                   <p className="question-hint">
-                    Showing {movies.length} movies
+                    Showing {movies.length} {mediaType === 'movie' ? 'movies' : 'series'}
                   </p>
                 </div>
             )}
@@ -672,7 +683,7 @@ function App() {
             {loadingMore && (
                 <div className="result-state" role="status">
                   <span className="loading-spinner" />
-                  <p>Loading more movies…</p>
+                  <p>Loading more recommendations…</p>
                 </div>
             )}
 
@@ -748,7 +759,7 @@ function App() {
 
           <div className="question-content">
             <span className="step-label">STEP {step + 1}</span>
-            <h2>{questions[step]}</h2>
+            <h2>{step === 1 ? `What era of ${mediaType === 'movie' ? 'movies' : 'TV series'} do you prefer?` : step === 5 ? (mediaType === 'movie' ? 'How long should the movie be?' : 'Optional preferences') : questions[step]}</h2>
             <p className="question-hint">
               {step === 3
                   ? 'Choose as many genres as you like.'
@@ -765,20 +776,25 @@ function App() {
 
             {step === 5 && (
                 <>
-                  <h3 className="sub-question">Preferred runtime</h3>
-                  {renderOptions(options.runtime)}
-
-                  <h3 className="sub-question">Preferred pacing</h3>
-                  <div className="options-grid">
-                    {options.pacing.map((item) => (
-                        <Option
-                            key={item}
-                            label={item}
-                            selected={answers.pacing === item}
-                            onClick={() => updateAnswer('pacing', item)}
-                        />
-                    ))}
-                  </div>
+                  {mediaType === 'movie' ? (
+                      <>
+                        <h3 className="sub-question">Preferred runtime</h3>
+                        {renderOptions(options.runtime)}
+                        <h3 className="sub-question">Preferred pacing</h3>
+                        <div className="options-grid">
+                          {options.pacing.map((item) => (
+                              <Option
+                                  key={item}
+                                  label={item}
+                                  selected={answers.pacing === item}
+                                  onClick={() => updateAnswer('pacing', item)}
+                              />
+                          ))}
+                        </div>
+                      </>
+                  ) : (
+                      <p className="question-hint">Runtime and pacing preferences are movie-only for now. You can skip this step.</p>
+                  )}
                 </>
             )}
 
@@ -825,7 +841,7 @@ function App() {
                   )}
 
                   <p className="actor-note">
-                    Results will only include movies featuring the actors
+                    Results will only include {mediaType === 'movie' ? 'movies' : 'TV series'} featuring the actors
                     you add, including credited supporting roles.
                   </p>
                 </div>
