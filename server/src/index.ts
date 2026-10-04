@@ -9,19 +9,31 @@ import { z } from "zod";
 dotenv.config();
 
 const app = express();
+// Render terminates TLS through one trusted proxy in production.
+if (process.env.NODE_ENV === "production") {
+    app.set("trust proxy", 1);
+}
 const PORT = Number(process.env.PORT) || 3000;
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 
-const allowedOrigins = [
-    "http://localhost:5173",
+const configuredOrigins = [
     process.env.FRONTEND_URL,
-].filter((origin): origin is string => Boolean(origin));
+    process.env.FRONTEND_URLS,
+]
+    .flatMap((value) => value?.split(",") ?? [])
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+const allowedOrigins = new Set([
+    ...(process.env.NODE_ENV === "production" ? [] : ["http://localhost:5173"]),
+    ...configuredOrigins,
+]);
 
 app.use(helmet());
 app.use(
     cors({
         origin: (origin, callback) => {
-            if (!origin || allowedOrigins.includes(origin)) {
+            if (!origin || allowedOrigins.has(origin)) {
                 callback(null, true);
             } else {
                 callback(new Error("Origin not allowed by CORS"));
@@ -40,6 +52,14 @@ app.use(
     }),
 );
 
+const recommendationLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 30,
+    standardHeaders: "draft-8",
+    legacyHeaders: false,
+    message: { error: "Too many recommendation requests. Please try again later." },
+});
+
 app.get("/api/health", (_req, res) => {
     res.json({ status: "ok", message: "Backend is running" });
 });
@@ -47,15 +67,35 @@ app.get("/api/health", (_req, res) => {
 const recommendationSchema = z.object({
     mode: z.enum(["genres", "personalized"]),
     mediaType: z.enum(["movie", "tv"]).default("movie"),
-    genres: z.array(z.string().max(50)).max(12).default([]),
-    mood: z.string().max(100).optional(),
-    era: z.string().max(100).optional(),
-    acclaim: z.string().max(100).optional(),
-    origin: z.string().max(100).optional(),
-    runtime: z.string().max(100).optional(),
-    pacing: z.string().max(100).optional(),
-    actors: z.array(z.string().max(100)).max(10).default([]),
+    genres: z.array(z.string().trim().min(1).max(50)).max(12).default([]),
+    mood: z.string().trim().min(1).max(100).optional(),
+    era: z.string().trim().min(1).max(100).optional(),
+    acclaim: z.string().trim().min(1).max(100).optional(),
+    origin: z.string().trim().min(1).max(100).optional(),
+    runtime: z.string().trim().min(1).max(100).optional(),
+    pacing: z.string().trim().min(1).max(100).optional(),
+    actors: z.array(z.string().trim().min(1).max(100)).max(10).default([]),
     page: z.number().int().min(1).max(500).default(1),
+}).superRefine((preferences, ctx) => {
+    const validGenres = preferences.mediaType === "tv" ? tvGenreIds : genreIds;
+
+    preferences.genres.forEach((genre, index) => {
+        if (!Object.prototype.hasOwnProperty.call(validGenres, genre)) {
+            ctx.addIssue({
+                code: "custom",
+                path: ["genres", index],
+                message: "Unsupported genre",
+            });
+        }
+    });
+
+    if (preferences.mode === "genres" && preferences.genres.length === 0) {
+        ctx.addIssue({
+            code: "custom",
+            path: ["genres"],
+            message: "Select at least one genre",
+        });
+    }
 });
 
 type TMDbPerson = {
@@ -137,44 +177,82 @@ const originCodes: Record<string, string> = {
     "European cinema": "FR|DE|IT|ES|GB",
 };
 
+const TMDB_REQUEST_TIMEOUT_MS = 8_000;
+const ACTOR_CACHE_MAX_ENTRIES = 500;
+const ACTOR_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const NEGATIVE_ACTOR_CACHE_TTL_MS = 5 * 60 * 1000;
+
+const actorCache = new Map<string, { id: number | null; expiresAt: number }>();
+const actorLookupsInFlight = new Map<string, Promise<number | null>>();
+
 /**
  * Resolve a user-entered actor name to a TMDb person ID.
- * Prefer an exact case-insensitive name match; otherwise use TMDb's
- * most relevant search result. The returned ID is used for cast filtering.
+ * Cache successful and unsuccessful lookups, and share concurrent lookups
+ * for the same normalized name to reduce external API usage.
  */
 async function resolveActorId(name: string): Promise<number | null> {
-    const params = new URLSearchParams({
-        api_key: TMDB_API_KEY!,
-        query: name,
-        include_adult: "false",
-        page: "1",
-    });
-
-    const response = await fetch(
-        `https://api.themoviedb.org/3/search/person?${params.toString()}`,
-    );
-
-    if (!response.ok) {
-        throw new Error(`TMDb person search failed with status ${response.status}`);
-    }
-
-    const data = (await response.json()) as TMDbPersonSearchResponse;
-    const people = data.results ?? [];
-
-    if (people.length === 0) return null;
-
     const normalizedName = name.trim().toLocaleLowerCase();
-    const exactMatches = people.filter(
-        (person) => person.name.trim().toLocaleLowerCase() === normalizedName,
-    );
+    const cached = actorCache.get(normalizedName);
 
-    const candidates = exactMatches.length > 0 ? exactMatches : people;
-    candidates.sort((a, b) => b.popularity - a.popularity);
+    if (cached && cached.expiresAt > Date.now()) {
+        return cached.id;
+    }
+    if (cached) actorCache.delete(normalizedName);
 
-    return candidates[0]?.id ?? null;
+    const inFlight = actorLookupsInFlight.get(normalizedName);
+    if (inFlight) return inFlight;
+
+    const lookup = (async (): Promise<number | null> => {
+        const params = new URLSearchParams({
+            api_key: TMDB_API_KEY!,
+            query: name.trim(),
+            include_adult: "false",
+            page: "1",
+        });
+
+        const response = await fetch(
+            `https://api.themoviedb.org/3/search/person?${params.toString()}`,
+            { signal: AbortSignal.timeout(TMDB_REQUEST_TIMEOUT_MS) },
+        );
+
+        if (!response.ok) {
+            throw new Error(`TMDb person search failed with status ${response.status}`);
+        }
+
+        const data = (await response.json()) as TMDbPersonSearchResponse;
+        const people = data.results ?? [];
+
+        const exactMatches = people.filter(
+            (person) => person.name.trim().toLocaleLowerCase() === normalizedName,
+        );
+
+        const candidates = exactMatches.length > 0 ? exactMatches : people;
+        candidates.sort((a, b) => b.popularity - a.popularity);
+
+        const id = candidates[0]?.id ?? null;
+        actorCache.set(normalizedName, {
+            id,
+            expiresAt: Date.now() + (id === null ? NEGATIVE_ACTOR_CACHE_TTL_MS : ACTOR_CACHE_TTL_MS),
+        });
+
+        while (actorCache.size > ACTOR_CACHE_MAX_ENTRIES) {
+            const oldestKey = actorCache.keys().next().value;
+            if (oldestKey === undefined) break;
+            actorCache.delete(oldestKey);
+        }
+
+        return id;
+    })();
+
+    actorLookupsInFlight.set(normalizedName, lookup);
+    try {
+        return await lookup;
+    } finally {
+        actorLookupsInFlight.delete(normalizedName);
+    }
 }
 
-app.post("/api/recommendations", async (req, res) => {
+app.post("/api/recommendations", recommendationLimiter, async (req, res) => {
     const parsed = recommendationSchema.safeParse(req.body);
 
     if (!parsed.success) {
@@ -186,7 +264,7 @@ app.post("/api/recommendations", async (req, res) => {
 
     if (!TMDB_API_KEY) {
         return res.status(500).json({
-            error: "TMDB_API_KEY is not configured on the server",
+            error: "Recommendation service is not configured",
         });
     }
 
@@ -278,6 +356,7 @@ app.post("/api/recommendations", async (req, res) => {
 
         const response = await fetch(
             `https://api.themoviedb.org/3/discover/${preferences.mediaType}?${params.toString()}`,
+            { signal: AbortSignal.timeout(TMDB_REQUEST_TIMEOUT_MS) },
         );
 
         if (!response.ok) {

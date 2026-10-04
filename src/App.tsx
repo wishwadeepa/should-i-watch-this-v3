@@ -487,14 +487,9 @@ function App() {
     return (
         <main className="app">
           <section className="flow-panel genre-panel">
-            <header className="app-header">
-              <span className="eyebrow">YOUR PERSONAL MOVIE DISCOVERY</span>
-              <h1>Should I Watch This?</h1>
-            </header>
-
-            <div className="flow-copy">
+            <div className="flow-copy page-heading">
               <span className="step-label">LET’S START WITH A GENRE</span>
-              <h2>What do you feel like watching?</h2>
+              <h1>What do you feel like watching?</h1>
               <p className="question-hint">
                 Choose one or more genres, or let us personalize your picks.
               </p>
@@ -527,6 +522,7 @@ function App() {
                   type="button"
                   className="next-button"
                   onClick={startGenreSearch}
+                  disabled={selectedGenres.length === 0 || loading}
               >
                 Find a movie
               </button>
@@ -727,11 +723,6 @@ function App() {
             ← Genres
           </button>
 
-          <header className="app-header">
-            <span className="eyebrow">YOUR PERSONAL MOVIE DISCOVERY</span>
-            <h1>Should I Watch This?</h1>
-          </header>
-
           <div className="progress-info">
           <span>
             QUESTION {step + 1} OF {questions.length}
@@ -759,7 +750,7 @@ function App() {
 
           <div className="question-content">
             <span className="step-label">STEP {step + 1}</span>
-            <h2>{step === 1 ? `What era of ${mediaType === 'movie' ? 'movies' : 'TV series'} do you prefer?` : step === 5 ? (mediaType === 'movie' ? 'How long should the movie be?' : 'Optional preferences') : questions[step]}</h2>
+            <h1>{step === 1 ? `What era of ${mediaType === 'movie' ? 'movies' : 'TV series'} do you prefer?` : step === 5 ? (mediaType === 'movie' ? 'How long should the movie be?' : 'Optional preferences') : questions[step]}</h1>
             <p className="question-hint">
               {step === 3
                   ? 'Choose as many genres as you like.'

@@ -188,6 +188,18 @@ button {
   line-height: 1.08;
 }
 
+/* Page-specific headings replace the redundant app branding on choice screens. */
+.genre-panel .page-heading h1,
+.questionnaire .question-content h1 {
+  margin: 12px 0;
+  color: var(--text-color);
+  font-size: clamp(2rem, 5vw, 3.5rem);
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1.08;
+  text-wrap: balance;
+}
+
 .flow-panel h2,
 .questionnaire h2 {
   margin: 12px 0;
@@ -315,9 +327,6 @@ button {
   margin: 36px 0;
 }
 
-.question-content h2 {
-  margin: 12px 0;
-}
 
 .sub-question {
   margin: 28px 0 14px;
