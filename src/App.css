@@ -100,7 +100,7 @@ button {
                   rgba(47, 78, 153, 0.20),
                   transparent 48%
           );
-  filter: blur(90px);
+  filter: blur(64px);
   opacity: 0.9;
   background-size: 125% 125%;
   animation: ambient-drift 26s ease-in-out infinite alternate;
@@ -572,14 +572,14 @@ input:focus-visible {
 .movie-ambient {
   position: absolute;
   z-index: -1;
-  inset: -65px;
+  inset: -38px;
   border-radius: 35px;
   pointer-events: none;
   background-position: center;
   background-repeat: no-repeat;
   background-size: cover;
   opacity: 0.24;
-  filter: blur(85px) saturate(1.5) brightness(0.75);
+  filter: blur(44px) saturate(1.5) brightness(0.75);
   transform: scale(1.04);
 }
 
@@ -819,9 +819,9 @@ input:focus-visible {
   }
 
   .movie-ambient {
-    inset: -45px;
+    inset: -28px;
     opacity: 0.18;
-    filter: blur(65px) saturate(1.4) brightness(0.75);
+    filter: blur(36px) saturate(1.4) brightness(0.75);
   }
 
   .summary-row {
