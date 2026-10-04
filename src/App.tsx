@@ -554,7 +554,8 @@ function App() {
               <h1>Picked for you</h1>
             </header>
 
-            <div className="media-switch" role="group" aria-label="Recommendation type">
+            <div className={`media-switch ${mediaType === 'tv' ? 'is-tv' : 'is-movie'}`} role="group" aria-label="Recommendation type">
+              <span className="media-switch-indicator" aria-hidden="true" />
               <button type="button" className={`media-switch-option ${mediaType === 'movie' ? 'active' : ''}`} aria-pressed={mediaType === 'movie'} onClick={() => mediaType !== 'movie' && startSearch(recommendationMode, answers, 'movie')}>Movies</button>
               <button type="button" className={`media-switch-option ${mediaType === 'tv' ? 'active' : ''}`} aria-pressed={mediaType === 'tv'} onClick={() => mediaType !== 'tv' && startSearch(recommendationMode, answers, 'tv')}>TV Series</button>
             </div>
@@ -672,7 +673,7 @@ function App() {
                       onClick={loadMore}
                       disabled={loadingMore}
                   >
-                    {loadingMore ? 'Loading…' : `Load more ${mediaType === 'movie' ? 'movies' : 'series'}`}
+                    {loadingMore ? 'Loading…' : 'Load more'}
                   </button>
                   <p className="question-hint">
                     Showing {movies.length} {mediaType === 'movie' ? 'movies' : 'series'}
