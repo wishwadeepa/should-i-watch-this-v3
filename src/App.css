@@ -114,6 +114,8 @@ button {
   pointer-events: none;
   opacity: 0.035;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.5'/%3E%3C/svg%3E");
+  background-size: 180px 180px;
+  animation: grain-drift 11s steps(7, end) infinite;
 }
 
 .app > * {
@@ -202,24 +204,36 @@ button {
 .landing-panel {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   justify-content: center;
   gap: 20px;
-  text-align: center;
+  text-align: left;
 }
 
 .landing-panel .app-header {
+  width: 100%;
   margin-bottom: 12px;
 }
 
 .landing-panel h1 {
-  max-width: 850px;
+  max-width: 920px;
+  margin: 0;
   font-size: clamp(2.8rem, 7vw, 6rem);
   line-height: 1.05;
+  text-wrap: balance;
 }
 
 .landing-panel .flow-copy {
   max-width: 600px;
+}
+
+.landing-panel .flow-copy h2 {
+  color: var(--primary-color);
+}
+
+.landing-panel .flow-primary {
+  align-self: flex-end;
+  margin-top: 8px;
 }
 
 /* Genre selection */
@@ -847,6 +861,16 @@ input:focus-visible {
   }
 }
 
+@media (max-width: 700px) {
+  .landing-panel {
+    text-align: left;
+  }
+
+  .landing-panel .flow-primary {
+    align-self: flex-start;
+  }
+}
+
 @media (max-width: 440px) {
   .flow-panel,
   .questionnaire {
@@ -1076,11 +1100,35 @@ input:focus-visible {
 }
 
 @keyframes ambient-drift {
-  0% { transform: translate3d(-1.2%, -0.8%, 0) scale(1); }
-  50% { transform: translate3d(1%, 0.8%, 0) scale(1.035); }
-  100% { transform: translate3d(-0.4%, 1.2%, 0) scale(1.015); }
+  0% {
+    transform: translate3d(-1.5%, -0.8%, 0) scale(1) rotate(-1deg);
+  }
+  23% {
+    transform: translate3d(0.8%, -1.1%, 0) scale(1.025) rotate(0.5deg);
+  }
+  51% {
+    transform: translate3d(1.4%, 0.9%, 0) scale(1.045) rotate(1deg);
+  }
+  76% {
+    transform: translate3d(-0.7%, 1.4%, 0) scale(1.02) rotate(-0.5deg);
+  }
+  100% {
+    transform: translate3d(-1.2%, 0.2%, 0) scale(1.035) rotate(-1deg);
+  }
+}
+
+@keyframes grain-drift {
+  0% { background-position: 0 0; }
+  20% { background-position: -36px 18px; }
+  40% { background-position: 24px -42px; }
+  60% { background-position: 48px 30px; }
+  80% { background-position: -18px -24px; }
+  100% { background-position: 0 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .app::before { animation: none; }
+  .app::before,
+  .app::after {
+    animation: none;
+  }
 }

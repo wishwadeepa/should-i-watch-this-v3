@@ -461,8 +461,7 @@ function App() {
         <main className="app">
           <section className="flow-panel landing-panel">
             <header className="app-header">
-              <span className="eyebrow">YOUR PERSONAL MOVIE DISCOVERY</span>
-              <h1>Should I Watch This?</h1>
+              <h1>What Should I Watch?</h1>
             </header>
 
             <div className="flow-copy">
