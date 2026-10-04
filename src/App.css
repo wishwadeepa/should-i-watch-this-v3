@@ -1,4 +1,5 @@
 
+
 /* ==========================================
    SHOULD I WATCH THIS? — APP STYLES
    ========================================== */
@@ -54,7 +55,6 @@ button {
   isolation: isolate;
   width: 100%;
   min-height: 100vh;
-  min-height: 100dvh;
   padding: 24px;
   display: flex;
   flex-direction: column;
@@ -78,6 +78,12 @@ button {
           #080d18;
 }
 
+@supports (min-height: 100dvh) {
+  .app {
+    min-height: 100dvh;
+  }
+}
+
 .app::before {
   content: "";
   position: fixed;
@@ -86,24 +92,30 @@ button {
   pointer-events: none;
   background:
           radial-gradient(
-                  ellipse at 20% 20%,
+                  ellipse at 16% 18%,
                   rgba(54, 86, 174, 0.27),
                   transparent 45%
           ),
           radial-gradient(
-                  ellipse at 80% 35%,
+                  ellipse at 82% 32%,
                   rgba(119, 76, 183, 0.22),
                   transparent 46%
           ),
           radial-gradient(
-                  ellipse at 50% 90%,
+                  ellipse at 48% 92%,
                   rgba(47, 78, 153, 0.20),
                   transparent 48%
+          ),
+          radial-gradient(
+                  ellipse at 74% 78%,
+                  rgba(177, 77, 164, 0.16),
+                  transparent 44%
           );
-  filter: blur(64px);
+  filter: blur(46px);
   opacity: 0.9;
-  background-size: 125% 125%;
-  animation: ambient-drift 26s ease-in-out infinite alternate;
+  background-size: 100% 100%;
+  animation: ambient-drift 48s ease-in-out infinite alternate;
+  transform-origin: center;
 }
 
 .app::after {
@@ -115,7 +127,6 @@ button {
   opacity: 0.035;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.5'/%3E%3C/svg%3E");
   background-size: 180px 180px;
-  animation: grain-drift 11s steps(7, end) infinite;
 }
 
 .app > * {
@@ -204,10 +215,10 @@ button {
 .landing-panel {
   display: flex;
   flex-direction: column;
-  align-items: stretch;
+  align-items: center;
   justify-content: center;
   gap: 20px;
-  text-align: left;
+  text-align: center;
 }
 
 .landing-panel .app-header {
@@ -217,7 +228,7 @@ button {
 
 .landing-panel h1 {
   max-width: 920px;
-  margin: 0;
+  margin: 0 auto;
   font-size: clamp(2.8rem, 7vw, 6rem);
   line-height: 1.05;
   text-wrap: balance;
@@ -225,16 +236,18 @@ button {
 
 .landing-panel .flow-copy {
   max-width: 600px;
+  margin-inline: auto;
+}
+
+.landing-panel .flow-primary {
+  align-self: center;
+  margin-top: 8px;
 }
 
 .landing-panel .flow-copy h2 {
   color: var(--primary-color);
 }
 
-.landing-panel .flow-primary {
-  align-self: flex-end;
-  margin-top: 8px;
-}
 
 /* Genre selection */
 .genre-panel {
@@ -436,15 +449,46 @@ input:focus-visible {
   margin: 22px auto 0;
   padding: 10px;
   border: 0;
-  background: transparent;
+  background: linear-gradient(
+          105deg,
+          var(--dynamic-secondary-text) 0%,
+          var(--dynamic-secondary-text) 37%,
+          rgba(197, 168, 255, 0.48) 43%,
+          #f1e7ff 49%,
+          #c5a8ff 53%,
+          var(--dynamic-secondary-text) 63%,
+          var(--dynamic-secondary-text) 100%
+  );
+  background-size: 300% 100%;
+  background-position: 100% 50%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
   color: var(--dynamic-secondary-text);
   font: inherit;
   cursor: pointer;
   text-align: center;
+  transition: transform 220ms ease;
+  animation: questionnaire-glow-sweep 5.2s ease-in-out infinite;
 }
 
 .questionnaire-entry:hover {
-  color: var(--text-color);
+  transform: translateY(-1px);
+}
+
+.questionnaire-entry:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 4px;
+  border-radius: 6px;
+}
+
+@keyframes questionnaire-glow-sweep {
+  0%, 12% {
+    background-position: 100% 50%;
+  }
+  88%, 100% {
+    background-position: 0% 50%;
+  }
 }
 
 /* Actor input */
@@ -863,11 +907,11 @@ input:focus-visible {
 
 @media (max-width: 700px) {
   .landing-panel {
-    text-align: left;
+    text-align: center;
   }
 
   .landing-panel .flow-primary {
-    align-self: flex-start;
+    align-self: center;
   }
 }
 
@@ -1101,30 +1145,20 @@ input:focus-visible {
 
 @keyframes ambient-drift {
   0% {
-    transform: translate3d(-1.5%, -0.8%, 0) scale(1) rotate(-1deg);
+    transform: translate3d(-1.2%, -0.8%, 0) scale(1);
   }
-  23% {
-    transform: translate3d(0.8%, -1.1%, 0) scale(1.025) rotate(0.5deg);
+  35% {
+    transform: translate3d(0.8%, -0.4%, 0) scale(1.025);
   }
-  51% {
-    transform: translate3d(1.4%, 0.9%, 0) scale(1.045) rotate(1deg);
-  }
-  76% {
-    transform: translate3d(-0.7%, 1.4%, 0) scale(1.02) rotate(-0.5deg);
+  68% {
+    transform: translate3d(1%, 0.9%, 0) scale(1.04);
   }
   100% {
-    transform: translate3d(-1.2%, 0.2%, 0) scale(1.035) rotate(-1deg);
+    transform: translate3d(-0.7%, 0.6%, 0) scale(1.02);
   }
 }
 
-@keyframes grain-drift {
-  0% { background-position: 0 0; }
-  20% { background-position: -36px 18px; }
-  40% { background-position: 24px -42px; }
-  60% { background-position: 48px 30px; }
-  80% { background-position: -18px -24px; }
-  100% { background-position: 0 0; }
-}
+
 
 @media (prefers-reduced-motion: reduce) {
   .app::before,
