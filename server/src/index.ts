@@ -64,6 +64,51 @@ app.get("/api/health", (_req, res) => {
     res.json({ status: "ok", message: "Backend is running" });
 });
 
+
+const personSearchLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 60,
+    standardHeaders: "draft-8",
+    legacyHeaders: false,
+    message: { error: "Too many people searches. Please try again later." },
+});
+
+app.get("/api/people/search", personSearchLimiter, async (req, res) => {
+    const query = typeof req.query.query === "string" ? req.query.query.trim() : "";
+    if (query.length < 2 || query.length > 100) {
+        return res.status(400).json({ error: "Enter between 2 and 100 characters to search." });
+    }
+    if (!TMDB_API_KEY) {
+        return res.status(500).json({ error: "People search is not configured" });
+    }
+    try {
+        const params = new URLSearchParams({ api_key: TMDB_API_KEY, query, include_adult: "false", page: "1" });
+        const response = await fetch(`https://api.themoviedb.org/3/search/person?${params.toString()}`,
+            { signal: AbortSignal.timeout(TMDB_REQUEST_TIMEOUT_MS) });
+        if (!response.ok) {
+            console.error("TMDb people search failed:", response.status);
+            return res.status(502).json({ error: "People search is temporarily unavailable." });
+        }
+        const data = (await response.json()) as {
+            results?: Array<{ id: number; name: string; known_for_department?: string; profile_path?: string | null; popularity?: number }>;
+        };
+        const results = (data.results ?? [])
+            .filter((person) => Number.isInteger(person.id) && typeof person.name === "string")
+            .sort((a, b) => (b.popularity ?? 0) - (a.popularity ?? 0))
+            .slice(0, 3)
+            .map((person) => ({
+                id: person.id,
+                name: person.name,
+                knownForDepartment: person.known_for_department ?? "Performer",
+                profileUrl: person.profile_path ? `https://image.tmdb.org/t/p/w185${person.profile_path}` : null,
+            }));
+        return res.json({ results });
+    } catch (error) {
+        console.error("People search request error:", error);
+        return res.status(502).json({ error: "Unable to connect to the people search service." });
+    }
+});
+
 const recommendationSchema = z.object({
     mode: z.enum(["genres", "personalized"]),
     mediaType: z.enum(["movie", "tv"]).default("movie"),

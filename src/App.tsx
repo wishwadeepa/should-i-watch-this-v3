@@ -1,5 +1,5 @@
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import './App.css'
 
 type Answers = {
@@ -11,6 +11,13 @@ type Answers = {
   runtime: string
   pacing: string
   actors: string[]
+}
+
+type PersonSuggestion = {
+  id: number
+  name: string
+  knownForDepartment?: string
+  profileUrl: string | null
 }
 
 type RecommendationItem = {
@@ -163,6 +170,10 @@ function App() {
   const [step, setStep] = useState(0)
   const [answers, setAnswers] = useState<Answers>(initialAnswers)
   const [actorInput, setActorInput] = useState('')
+  const [actorSuggestions, setActorSuggestions] = useState<PersonSuggestion[]>([])
+  const [actorSearchLoading, setActorSearchLoading] = useState(false)
+  const [actorSearchError, setActorSearchError] = useState('')
+  const [activeActorSuggestion, setActiveActorSuggestion] = useState(-1)
 
   const [recommendationMode, setRecommendationMode] =
       useState<RecommendationMode>('genres')
@@ -173,6 +184,47 @@ function App() {
   const [error, setError] = useState('')
   const [pageNumber, setPageNumber] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
+
+  useEffect(() => {
+    const query = actorInput.trim()
+    if (page !== 'questionnaire' || step !== 6 || query.length < 2) {
+      setActorSuggestions([])
+      setActorSearchLoading(false)
+      setActorSearchError('')
+      setActiveActorSuggestion(-1)
+      return
+    }
+
+    const controller = new AbortController()
+    const timer = window.setTimeout(async () => {
+      setActorSearchLoading(true)
+      setActorSearchError('')
+      try {
+        const response = await fetch(
+            `${API_URL}/api/people/search?query=${encodeURIComponent(query)}`,
+            { signal: controller.signal },
+        )
+        const data = (await response.json()) as { results?: PersonSuggestion[]; error?: string }
+        if (!response.ok) throw new Error(data.error || 'Could not search for people.')
+        setActorSuggestions((data.results ?? []).filter(
+            (person) => !answers.actors.some((actor) => actor.toLocaleLowerCase() === person.name.toLocaleLowerCase()),
+        ))
+        setActiveActorSuggestion(-1)
+      } catch (err) {
+        if (!controller.signal.aborted) {
+          setActorSuggestions([])
+          setActorSearchError(err instanceof Error ? err.message : 'Could not search for people.')
+        }
+      } finally {
+        if (!controller.signal.aborted) setActorSearchLoading(false)
+      }
+    }, 300)
+
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
+  }, [actorInput, answers.actors, page, step])
 
   const toggleGenre = (genre: string) => {
     setSelectedGenres((previous) =>
@@ -210,15 +262,32 @@ function App() {
     }))
   }
 
-  const addActor = () => {
-    const name = actorInput.trim()
-    if (!name || answers.actors.includes(name)) return
-
-    setAnswers((previous) => ({
-      ...previous,
-      actors: [...previous.actors, name],
-    }))
+  const addActor = (person?: PersonSuggestion) => {
+    const name = (person?.name ?? actorInput).trim()
+    if (!name || answers.actors.some((actor) => actor.toLocaleLowerCase() === name.toLocaleLowerCase())) return
+    setAnswers((previous) => ({ ...previous, actors: [...previous.actors, name] }))
     setActorInput('')
+    setActorSuggestions([])
+    setActorSearchError('')
+    setActiveActorSuggestion(-1)
+  }
+
+  const handleActorInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'ArrowDown' && actorSuggestions.length > 0) {
+      event.preventDefault()
+      setActiveActorSuggestion((current) => (current + 1) % actorSuggestions.length)
+    } else if (event.key === 'ArrowUp' && actorSuggestions.length > 0) {
+      event.preventDefault()
+      setActiveActorSuggestion((current) => current <= 0 ? actorSuggestions.length - 1 : current - 1)
+    } else if (event.key === 'Enter') {
+      event.preventDefault()
+      if (activeActorSuggestion >= 0 && actorSuggestions[activeActorSuggestion]) addActor(actorSuggestions[activeActorSuggestion])
+      else if (actorSuggestions.length === 1) addActor(actorSuggestions[0])
+      else if (actorSuggestions.length === 0 && actorInput.trim()) addActor()
+    } else if (event.key === 'Escape') {
+      setActorSuggestions([])
+      setActiveActorSuggestion(-1)
+    }
   }
 
   const removeActor = (name: string) => {
@@ -231,23 +300,26 @@ function App() {
   const getRequestBody = (
       mode: RecommendationMode,
       answersOverride: Answers = answers,
-  ) =>
-      mode === 'genres'
-          ? {
-            mode,
-            genres: selectedGenres,
-          }
-          : {
-            mode,
-            genres: answersOverride.styles,
-            mood: answersOverride.mood,
-            era: answersOverride.era,
-            acclaim: answersOverride.acclaim,
-            origin: answersOverride.origin,
-            runtime: answersOverride.runtime,
-            pacing: answersOverride.pacing,
-            actors: answersOverride.actors,
-          }
+  ) => {
+    if (mode === 'genres') {
+      return {
+        mode: 'genres' as const,
+        genres: selectedGenres,
+      }
+    }
+
+    return {
+      mode: 'personalized' as const,
+      genres: answersOverride.styles,
+      ...(answersOverride.mood.trim() ? { mood: answersOverride.mood.trim() } : {}),
+      ...(answersOverride.era.trim() ? { era: answersOverride.era.trim() } : {}),
+      ...(answersOverride.acclaim.trim() ? { acclaim: answersOverride.acclaim.trim() } : {}),
+      ...(answersOverride.origin.trim() ? { origin: answersOverride.origin.trim() } : {}),
+      ...(answersOverride.runtime.trim() ? { runtime: answersOverride.runtime.trim() } : {}),
+      ...(answersOverride.pacing.trim() ? { pacing: answersOverride.pacing.trim() } : {}),
+      actors: answersOverride.actors,
+    }
+  }
 
   const startSearch = async (
       mode: RecommendationMode,
@@ -408,6 +480,10 @@ function App() {
     setAnswers(initialAnswers)
     setSelectedGenres([])
     setActorInput('')
+    setActorSuggestions([])
+    setActorSearchLoading(false)
+    setActorSearchError('')
+    setActiveActorSuggestion(-1)
     setRecommendationMode('genres')
     setMediaType('movie')
     setMovies([])
@@ -791,28 +867,44 @@ function App() {
 
             {step === 6 && (
                 <div className="actor-section">
-                  <div className="actor-entry">
-                    <input
-                        value={actorInput}
-                        onChange={(event) => setActorInput(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter') {
-                            event.preventDefault()
-                            addActor()
-                          }
-                        }}
-                        placeholder="Type an actor or actress name"
-                        aria-label="Actor or actress name"
-                        maxLength={100}
-                    />
-                    <button
-                        type="button"
-                        className="add-button"
-                        onClick={addActor}
-                        disabled={!actorInput.trim()}
-                    >
-                      Add
-                    </button>
+                  <div className="actor-autocomplete">
+                    <div className="actor-entry">
+                      <input
+                          value={actorInput}
+                          onChange={(event) => { setActorInput(event.target.value); setActorSearchError('') }}
+                          onKeyDown={handleActorInputKeyDown}
+                          placeholder="Start typing a name…"
+                          aria-label="Search actor or actress"
+                          aria-autocomplete="list"
+                          aria-expanded={actorSuggestions.length > 0}
+                          aria-controls="actor-suggestions"
+                          aria-activedescendant={activeActorSuggestion >= 0 ? `actor-suggestion-${actorSuggestions[activeActorSuggestion]?.id}` : undefined}
+                          maxLength={100}
+                      />
+                      <button type="button" className="add-button" onClick={() => addActor()}
+                              disabled={!actorInput.trim() || actorSuggestions.length > 0}
+                              title="Add typed name if no suggestions are shown">Add</button>
+                    </div>
+                    {actorSearchLoading && <p className="actor-search-status" role="status">Searching TMDb…</p>}
+                    {actorSearchError && <p className="actor-search-status actor-search-error" role="status">{actorSearchError}</p>}
+                    {!actorSearchLoading && !actorSearchError && actorInput.trim().length >= 2 && actorSuggestions.length === 0 && (
+                        <p className="actor-search-status">No matching people found. You can add the name manually.</p>
+                    )}
+                    {actorSuggestions.length > 0 && (
+                        <div className="actor-suggestions" id="actor-suggestions" role="listbox" aria-label="Matching people">
+                          {actorSuggestions.slice(0, 3).map((person, index) => (
+                              <button type="button" id={`actor-suggestion-${person.id}`}
+                                      className={`actor-suggestion ${activeActorSuggestion === index ? 'active' : ''}`}
+                                      key={person.id} role="option" aria-selected={activeActorSuggestion === index}
+                                      onMouseDown={(event) => event.preventDefault()} onClick={() => addActor(person)}>
+                                {person.profileUrl ? <img src={person.profileUrl} alt="" className="actor-suggestion-avatar" loading="lazy" />
+                                    : <span className="actor-suggestion-avatar actor-suggestion-placeholder" aria-hidden="true">?</span>}
+                                <span className="actor-suggestion-copy"><strong>{person.name}</strong><small>{person.knownForDepartment || 'Performer'}</small></span>
+                                <span className="actor-suggestion-add" aria-hidden="true">+</span>
+                              </button>
+                          ))}
+                        </div>
+                    )}
                   </div>
 
                   {answers.actors.length > 0 && (
