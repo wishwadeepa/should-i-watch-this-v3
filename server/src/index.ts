@@ -25,7 +25,7 @@ const configuredOrigins = [
     .filter(Boolean);
 
 const allowedOrigins = new Set([
-    ...(process.env.NODE_ENV === "production" ? [] : ["http://localhost:5173"]),
+    ...(process.env.NODE_ENV === "production" ? [] : ["http://localhost:5173","http://localhost:4173"]),
     ...configuredOrigins,
 ]);
 
