@@ -39,10 +39,6 @@ app.use(
 
 app.use(express.json({ limit: "10kb" }));
 
-/* -------------------------------------------------------------------------- */
-/* Cloudflare-compatible rate limiting                                        */
-/* -------------------------------------------------------------------------- */
-
 type RateLimitEntry = {
 	count: number;
 	resetAt: number;
@@ -133,37 +129,12 @@ const personSearchLimiter = createRateLimiter(
 	},
 );
 
-/* -------------------------------------------------------------------------- */
-/* Constants                                                                  */
-/* -------------------------------------------------------------------------- */
-
-const TMDB_REQUEST_TIMEOUT_MS = 8_000;
-
-const ACTOR_CACHE_MAX_ENTRIES = 500;
-const ACTOR_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
-const NEGATIVE_ACTOR_CACHE_TTL_MS = 5 * 60 * 1000;
-
-/*
- * TV actor matching can potentially produce many candidate shows.
- * We inspect a reasonable number of candidates so the Worker does not
- * make an excessive number of TMDb requests in a single recommendation.
- */
-const MAX_TV_ACTOR_CANDIDATES = 100;
-
-/* -------------------------------------------------------------------------- */
-/* Health                                                                    */
-/* -------------------------------------------------------------------------- */
-
 app.get("/api/health", (_req, res) => {
 	res.json({
 		status: "ok",
 		message: "Backend is running",
 	});
 });
-
-/* -------------------------------------------------------------------------- */
-/* People search                                                              */
-/* -------------------------------------------------------------------------- */
 
 app.get(
 	"/api/people/search",
@@ -264,88 +235,25 @@ app.get(
 	},
 );
 
-/* -------------------------------------------------------------------------- */
-/* Validation                                                                 */
-/* -------------------------------------------------------------------------- */
-
 const recommendationSchema = z
 	.object({
 		mode: z.enum(["genres", "personalized"]),
-
-		mediaType: z
-			.enum(["movie", "tv"])
-			.default("movie"),
-
+		mediaType: z.enum(["movie", "tv"]).default("movie"),
 		genres: z
-			.array(
-				z
-					.string()
-					.trim()
-					.min(1)
-					.max(50),
-			)
+			.array(z.string().trim().min(1).max(50))
 			.max(12)
 			.default([]),
-
-		mood: z
-			.string()
-			.trim()
-			.min(1)
-			.max(100)
-			.optional(),
-
-		era: z
-			.string()
-			.trim()
-			.min(1)
-			.max(100)
-			.optional(),
-
-		acclaim: z
-			.string()
-			.trim()
-			.min(1)
-			.max(100)
-			.optional(),
-
-		origin: z
-			.string()
-			.trim()
-			.min(1)
-			.max(100)
-			.optional(),
-
-		runtime: z
-			.string()
-			.trim()
-			.min(1)
-			.max(100)
-			.optional(),
-
-		pacing: z
-			.string()
-			.trim()
-			.min(1)
-			.max(100)
-			.optional(),
-
+		mood: z.string().trim().min(1).max(100).optional(),
+		era: z.string().trim().min(1).max(100).optional(),
+		acclaim: z.string().trim().min(1).max(100).optional(),
+		origin: z.string().trim().min(1).max(100).optional(),
+		runtime: z.string().trim().min(1).max(100).optional(),
+		pacing: z.string().trim().min(1).max(100).optional(),
 		actors: z
-			.array(
-				z
-					.string()
-					.trim()
-					.min(1)
-					.max(100),
-			)
+			.array(z.string().trim().min(1).max(100))
 			.max(10)
 			.default([]),
-
-		page: z
-			.number()
-			.int()
-			.min(1)
-			.max(500)
-			.default(1),
+		page: z.number().int().min(1).max(500).default(1),
 	})
 	.superRefine((preferences, ctx) => {
 		const validGenres =
@@ -379,10 +287,6 @@ const recommendationSchema = z
 			});
 		}
 	});
-
-/* -------------------------------------------------------------------------- */
-/* TMDb types                                                                 */
-/* -------------------------------------------------------------------------- */
 
 type TMDbPerson = {
 	id: number;
@@ -424,7 +328,6 @@ type TMDbTVDetails = {
 	name?: string;
 	overview: string;
 	poster_path: string | null;
-	backdrop_path: string | null;
 	first_air_date?: string;
 	vote_average: number;
 	vote_count: number;
@@ -434,10 +337,6 @@ type TMDbTVDetails = {
 	episode_run_time?: number[];
 	popularity?: number;
 };
-
-/* -------------------------------------------------------------------------- */
-/* Genre / preference maps                                                    */
-/* -------------------------------------------------------------------------- */
 
 const genreIds: Record<string, number> = {
 	Action: 28,
@@ -464,7 +363,7 @@ const tvGenreIds: Record<string, number> = {
 	Animation: 16,
 	Comedy: 35,
 	Crime: 80,
-	Documentary: 99,
+	Documentary: 10764,
 	Drama: 18,
 	Family: 10751,
 	Fantasy: 10765,
@@ -482,10 +381,7 @@ const eraRanges: Record<string, [number, number]> = {
 	"1970–1989": [1970, 1989],
 	"1990–2004": [1990, 2004],
 	"2005–2014": [2005, 2014],
-	"2015 onwards": [
-		2015,
-		new Date().getFullYear(),
-	],
+	"2015 onwards": [2015, new Date().getFullYear()],
 };
 
 const originCodes: Record<string, string> = {
@@ -497,16 +393,15 @@ const originCodes: Record<string, string> = {
 	"European cinema": "FR|DE|IT|ES|GB",
 };
 
-/* -------------------------------------------------------------------------- */
-/* Actor cache                                                                */
-/* -------------------------------------------------------------------------- */
+const TMDB_REQUEST_TIMEOUT_MS = 8_000;
+const ACTOR_CACHE_MAX_ENTRIES = 500;
+const ACTOR_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const NEGATIVE_ACTOR_CACHE_TTL_MS = 5 * 60 * 1000;
+const MAX_TV_ACTOR_CANDIDATES = 100;
 
 const actorCache = new Map<
 	string,
-	{
-		id: number | null;
-		expiresAt: number;
-	}
+	{ id: number | null; expiresAt: number }
 >();
 
 const actorLookupsInFlight = new Map<
@@ -517,11 +412,11 @@ const actorLookupsInFlight = new Map<
 async function resolveActorId(
 	name: string,
 ): Promise<number | null> {
-	const normalizedName =
-		name.trim().toLocaleLowerCase();
+	const normalizedName = name
+		.trim()
+		.toLocaleLowerCase();
 
-	const cached =
-		actorCache.get(normalizedName);
+	const cached = actorCache.get(normalizedName);
 
 	if (
 		cached &&
@@ -535,17 +430,13 @@ async function resolveActorId(
 	}
 
 	const inFlight =
-		actorLookupsInFlight.get(
-			normalizedName,
-		);
+		actorLookupsInFlight.get(normalizedName);
 
 	if (inFlight) {
 		return inFlight;
 	}
 
-	const lookup = (async (): Promise<
-		number | null
-	> => {
+	const lookup = (async (): Promise<number | null> => {
 		const params = new URLSearchParams({
 			api_key: TMDB_API_KEY!,
 			query: name.trim(),
@@ -573,14 +464,13 @@ async function resolveActorId(
 
 		const people = data.results ?? [];
 
-		const exactMatches =
-			people.filter(
-				(person) =>
-					person.name
-						.trim()
-						.toLocaleLowerCase() ===
-					normalizedName,
-			);
+		const exactMatches = people.filter(
+			(person) =>
+				person.name
+					.trim()
+					.toLocaleLowerCase() ===
+				normalizedName,
+		);
 
 		const candidates =
 			exactMatches.length > 0
@@ -588,39 +478,28 @@ async function resolveActorId(
 				: people;
 
 		candidates.sort(
-			(a, b) =>
-				b.popularity -
-				a.popularity,
+			(a, b) => b.popularity - a.popularity,
 		);
 
-		const id =
-			candidates[0]?.id ?? null;
+		const id = candidates[0]?.id ?? null;
 
-		actorCache.set(
-			normalizedName,
-			{
-				id,
-				expiresAt:
-					Date.now() +
-					(id === null
-						? NEGATIVE_ACTOR_CACHE_TTL_MS
-						: ACTOR_CACHE_TTL_MS),
-			},
-		);
+		actorCache.set(normalizedName, {
+			id,
+			expiresAt:
+				Date.now() +
+				(id === null
+					? NEGATIVE_ACTOR_CACHE_TTL_MS
+					: ACTOR_CACHE_TTL_MS),
+		});
 
 		while (
 			actorCache.size >
 			ACTOR_CACHE_MAX_ENTRIES
 			) {
 			const oldestKey =
-				actorCache.keys().next()
-					.value;
+				actorCache.keys().next().value;
 
-			if (
-				oldestKey === undefined
-			) {
-				break;
-			}
+			if (oldestKey === undefined) break;
 
 			actorCache.delete(oldestKey);
 		}
@@ -641,10 +520,6 @@ async function resolveActorId(
 		);
 	}
 }
-
-/* -------------------------------------------------------------------------- */
-/* TV actor credit cache                                                      */
-/* -------------------------------------------------------------------------- */
 
 const tvActorCreditsCache = new Map<
 	number,
@@ -701,16 +576,11 @@ async function getActorTVSeriesIds(
 	tvActorCreditsCache.set(personId, {
 		ids,
 		expiresAt:
-			Date.now() +
-			ACTOR_CACHE_TTL_MS,
+			Date.now() + ACTOR_CACHE_TTL_MS,
 	});
 
 	return ids;
 }
-
-/* -------------------------------------------------------------------------- */
-/* TV details                                                                 */
-/* -------------------------------------------------------------------------- */
 
 async function getTVDetails(
 	id: number,
@@ -742,9 +612,73 @@ async function getTVDetails(
 	return (await response.json()) as TMDbTVDetails;
 }
 
-/* -------------------------------------------------------------------------- */
-/* TV filtering helpers                                                       */
-/* -------------------------------------------------------------------------- */
+/**
+ * Returns the selected year range.
+ */
+function getSelectedYearRange(
+	preferences: z.infer<
+		typeof recommendationSchema
+	>,
+): [number, number] | null {
+	if (
+		!preferences.era ||
+		!eraRanges[preferences.era]
+	) {
+		return null;
+	}
+
+	return eraRanges[preferences.era];
+}
+
+/**
+ * Extract the release year from a movie or TV result.
+ */
+function getMediaYear(
+	item: TMDbMedia,
+): number | null {
+	const date =
+		item.release_date ??
+		item.first_air_date ??
+		"";
+
+	if (!date) return null;
+
+	const year = Number(date.slice(0, 4));
+
+	return Number.isInteger(year)
+		? year
+		: null;
+}
+
+/**
+ * Strict local year check.
+ *
+ * This is intentionally applied AFTER TMDb returns results.
+ * That means even if TMDb returns an item outside the
+ * requested range, it cannot reach the frontend.
+ */
+function matchesMediaYear(
+	item: TMDbMedia,
+	preferences: z.infer<
+		typeof recommendationSchema
+	>,
+): boolean {
+	const range =
+		getSelectedYearRange(preferences);
+
+	if (!range) return true;
+
+	const year = getMediaYear(item);
+
+	if (year === null) return false;
+
+	const [startYear, endYear] = range;
+
+	return (
+		year >= startYear &&
+		year <= endYear
+	);
+}
 
 function matchesTVFilters(
 	item: TMDbTVDetails,
@@ -781,18 +715,13 @@ function matchesTVFilters(
 		}
 	}
 
-	if (
-		preferences.era &&
-		eraRanges[preferences.era]
-	) {
-		const [
-			startYear,
-			endYear,
-		] =
-			eraRanges[
-				preferences.era
-				];
+	/*
+	 * Strict TV year filtering.
+	 */
+	const range =
+		getSelectedYearRange(preferences);
 
+	if (range) {
 		const year = item.first_air_date
 			? Number(
 				item.first_air_date.slice(
@@ -800,10 +729,19 @@ function matchesTVFilters(
 					4,
 				),
 			)
-			: 0;
+			: null;
 
 		if (
-			!year ||
+			year === null ||
+			!Number.isInteger(year)
+		) {
+			return false;
+		}
+
+		const [startYear, endYear] =
+			range;
+
+		if (
 			year < startYear ||
 			year > endYear
 		) {
@@ -813,9 +751,7 @@ function matchesTVFilters(
 
 	if (
 		preferences.origin &&
-		originCodes[
-			preferences.origin
-			]
+		originCodes[preferences.origin]
 	) {
 		const allowedCountries =
 			originCodes[
@@ -823,8 +759,9 @@ function matchesTVFilters(
 				].split("|");
 
 		const hasOrigin =
-			(item.origin_country ??
-				[]).some((country) =>
+			(
+				item.origin_country ?? []
+			).some((country) =>
 				allowedCountries.includes(
 					country,
 				),
@@ -917,10 +854,6 @@ function matchesTVFilters(
 	return true;
 }
 
-/* -------------------------------------------------------------------------- */
-/* TV actor recommendation                                                    */
-/* -------------------------------------------------------------------------- */
-
 async function getTVActorCandidates(
 	actorIds: number[],
 ): Promise<number[]> {
@@ -941,11 +874,11 @@ async function getTVActorCandidates(
 
 	/*
 	 * Start with the smallest actor credit set.
-	 * This reduces the amount of intersection work.
+	 * This makes the intersection considerably
+	 * cheaper when one actor has many credits.
 	 */
 	actorSets.sort(
-		(a, b) =>
-			a.size - b.size,
+		(a, b) => a.size - b.size,
 	);
 
 	const intersection =
@@ -956,9 +889,7 @@ async function getTVActorCandidates(
 		i < actorSets.length;
 		i++
 	) {
-		for (
-			const showId of intersection
-			) {
+		for (const showId of intersection) {
 			if (
 				!actorSets[i].has(showId)
 			) {
@@ -982,10 +913,6 @@ async function getTVActorCandidates(
 		MAX_TV_ACTOR_CANDIDATES,
 	);
 }
-
-/* -------------------------------------------------------------------------- */
-/* Recommendations                                                            */
-/* -------------------------------------------------------------------------- */
 
 app.post(
 	"/api/recommendations",
@@ -1016,10 +943,19 @@ app.post(
 			parsed.data;
 
 		try {
-			/* ------------------------------------------------------------------ */
-			/* TV with actors: intersection-based implementation                 */
-			/* ------------------------------------------------------------------ */
-
+			/*
+			 * ------------------------------------------------
+			 * TV + ACTORS
+			 * ------------------------------------------------
+			 *
+			 * TMDb Discover does not provide the same
+			 * actor AND behaviour needed here, so we:
+			 *
+			 * 1. Get every TV credit for every actor.
+			 * 2. Intersect the IDs.
+			 * 3. Get details for the common shows.
+			 * 4. Apply ALL filters locally.
+			 */
 			if (
 				preferences.mediaType ===
 				"tv" &&
@@ -1038,10 +974,7 @@ app.post(
 
 				const unresolvedActors =
 					preferences.actors.filter(
-						(
-							_actor,
-							index,
-						) =>
+						(_actor, index) =>
 							resolvedActorIds[
 								index
 								] === null,
@@ -1087,11 +1020,6 @@ app.post(
 					});
 				}
 
-				/*
-				 * Fetch the actual TV details so we can apply the
-				 * questionnaire filters that Discover TV cannot combine
-				 * with actor credits.
-				 */
 				const detailResults =
 					await Promise.all(
 						candidateIds.map(
@@ -1107,16 +1035,13 @@ app.post(
 						(
 							item,
 						): item is TMDbTVDetails =>
-							item !== null &&
+							item !==
+							null &&
 							matchesTVFilters(
 								item,
 								preferences,
 							),
 					);
-
-				/* -------------------------------------------------------------- */
-				/* Sorting                                                        */
-				/* -------------------------------------------------------------- */
 
 				if (
 					preferences.acclaim ===
@@ -1152,16 +1077,17 @@ app.post(
 						pageSize,
 					);
 
-				const safePage = Math.min(
-					Math.max(
-						preferences.page,
-						1,
-					),
-					Math.max(
-						totalPages,
-						1,
-					),
-				);
+				const safePage =
+					Math.min(
+						Math.max(
+							preferences.page,
+							1,
+						),
+						Math.max(
+							totalPages,
+							1,
+						),
+					);
 
 				const start =
 					(safePage - 1) *
@@ -1170,41 +1096,34 @@ app.post(
 				const pageResults =
 					matchingShows.slice(
 						start,
-						start + pageSize,
+						start +
+						pageSize,
 					);
 
 				const recommendations =
 					pageResults.map(
 						(item) => ({
 							id: item.id,
-
 							title:
 								item.name ??
 								"Untitled series",
-
 							overview:
 							item.overview,
-
 							posterUrl:
 								item.poster_path
 									? `https://image.tmdb.org/t/p/w500${item.poster_path}`
 									: null,
-
 							backdropUrl:
 								item.backdrop_path
 									? `https://image.tmdb.org/t/p/w1280${item.backdrop_path}`
 									: null,
-
 							releaseDate:
 								item.first_air_date ??
 								"",
-
 							rating:
 							item.vote_average,
-
 							voteCount:
 							item.vote_count,
-
 							genreIds:
 							item.genre_ids,
 						}),
@@ -1213,16 +1132,13 @@ app.post(
 				return res.json({
 					results:
 					recommendations,
-
 					page:
-						totalResults === 0
+						totalResults ===
+						0
 							? preferences.page
 							: safePage,
-
 					totalPages,
-
 					totalResults,
-
 					...(totalResults ===
 					0
 						? {
@@ -1233,14 +1149,18 @@ app.post(
 				});
 			}
 
-			/* ------------------------------------------------------------------ */
-			/* Movie / TV without actor intersection                              */
-			/* ------------------------------------------------------------------ */
+			/*
+			 * ------------------------------------------------
+			 * NORMAL TMDb DISCOVER SEARCH
+			 * ------------------------------------------------
+			 */
 
 			const params =
 				new URLSearchParams({
-					api_key: TMDB_API_KEY,
-					language: "en-US",
+					api_key:
+					TMDB_API_KEY,
+					language:
+						"en-US",
 					sort_by:
 						"popularity.desc",
 					include_adult:
@@ -1266,7 +1186,8 @@ app.post(
 						(
 							id,
 						): id is number =>
-							id !== undefined,
+							id !==
+							undefined,
 					);
 
 			if (
@@ -1281,19 +1202,29 @@ app.post(
 				);
 			}
 
-			if (
-				preferences.era &&
-				eraRanges[
-					preferences.era
-					]
-			) {
+			/*
+			 * ------------------------------------------------
+			 * YEAR FILTER
+			 * ------------------------------------------------
+			 *
+			 * We still send the date to TMDb because it
+			 * reduces the number of irrelevant results.
+			 *
+			 * BUT we ALSO perform strict local filtering
+			 * below. This prevents out-of-range titles from
+			 * reaching the frontend even if TMDb's result
+			 * set behaves unexpectedly.
+			 */
+			const selectedYearRange =
+				getSelectedYearRange(
+					preferences,
+				);
+
+			if (selectedYearRange) {
 				const [
 					startYear,
 					endYear,
-				] =
-					eraRanges[
-						preferences.era
-						];
+				] = selectedYearRange;
 
 				const dateField =
 					preferences.mediaType ===
@@ -1419,56 +1350,6 @@ app.post(
 			}
 
 			if (
-				preferences.mediaType ===
-				"tv" &&
-				preferences.runtime
-			) {
-				if (
-					preferences.runtime ===
-					"Under 90 minutes"
-				) {
-					params.set(
-						"with_runtime.lte",
-						"89",
-					);
-				} else if (
-					preferences.runtime ===
-					"90–120 minutes"
-				) {
-					params.set(
-						"with_runtime.gte",
-						"90",
-					);
-
-					params.set(
-						"with_runtime.lte",
-						"120",
-					);
-				} else if (
-					preferences.runtime ===
-					"2–2.5 hours"
-				) {
-					params.set(
-						"with_runtime.gte",
-						"121",
-					);
-
-					params.set(
-						"with_runtime.lte",
-						"150",
-					);
-				} else if (
-					preferences.runtime ===
-					"Over 2.5 hours"
-				) {
-					params.set(
-						"with_runtime.gte",
-						"151",
-					);
-				}
-			}
-
-			if (
 				preferences.origin &&
 				originCodes[
 					preferences.origin
@@ -1482,10 +1363,11 @@ app.post(
 				);
 			}
 
-			/* ------------------------------------------------------------------ */
-			/* Movie actor filtering                                              */
-			/* ------------------------------------------------------------------ */
-
+			/*
+			 * ------------------------------------------------
+			 * MOVIE ACTOR AND FILTER
+			 * ------------------------------------------------
+			 */
 			if (
 				preferences.mediaType ===
 				"movie" &&
@@ -1504,10 +1386,7 @@ app.post(
 
 				const unresolvedActors =
 					preferences.actors.filter(
-						(
-							_actor,
-							index,
-						) =>
+						(_actor, index) =>
 							resolvedActorIds[
 								index
 								] === null,
@@ -1537,8 +1416,9 @@ app.post(
 					castIds.length > 0
 				) {
 					/*
-					 * TMDb comma = AND
-					 * TMDb pipe = OR
+					 * IMPORTANT:
+					 * TMDb uses comma for AND and
+					 * pipe for OR here.
 					 */
 					params.set(
 						"with_cast",
@@ -1546,10 +1426,6 @@ app.post(
 					);
 				}
 			}
-
-			/* ------------------------------------------------------------------ */
-			/* TMDb Discover request                                               */
-			/* ------------------------------------------------------------------ */
 
 			const response =
 				await fetch(
@@ -1584,9 +1460,28 @@ app.post(
 					total_results?: number;
 				};
 
+			/*
+			 * ------------------------------------------------
+			 * STRICT LOCAL POST-FILTER
+			 * ------------------------------------------------
+			 *
+			 * This is the important fix.
+			 *
+			 * Even if TMDb gives us an item outside the
+			 * selected year range, it gets removed here.
+			 */
+			const filteredResults =
+				(data.results ?? []).filter(
+					(item) =>
+						matchesMediaYear(
+							item,
+							preferences,
+						),
+				);
+
 			const recommendations =
-				(data.results ?? [])
-					.map((item) => ({
+				filteredResults.map(
+					(item) => ({
 						id: item.id,
 
 						title:
@@ -1626,7 +1521,8 @@ app.post(
 
 						genreIds:
 						item.genre_ids,
-					}));
+					}),
+				);
 
 			return res.json({
 				results:
@@ -1636,16 +1532,21 @@ app.post(
 					data.page ??
 					preferences.page,
 
-				totalPages:
-					Math.min(
-						data.total_pages ??
-						1,
-						500,
-					),
+				totalPages: Math.min(
+					data.total_pages ??
+					1,
+					500,
+				),
 
+				/*
+				 * TMDb's total_results describes the
+				 * unfiltered Discover query. Because we
+				 * post-filter the page locally, it is safer
+				 * to report the number of results actually
+				 * returned here.
+				 */
 				totalResults:
-					data.total_results ??
-					recommendations.length,
+				recommendations.length,
 			});
 		} catch (error) {
 			console.error(
@@ -1662,10 +1563,6 @@ app.post(
 		}
 	},
 );
-
-/* -------------------------------------------------------------------------- */
-/* Cloudflare Workers / Express adapter                                       */
-/* -------------------------------------------------------------------------- */
 
 app.listen(PORT);
 
