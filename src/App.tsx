@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from 'react'
 import './App.css'
 
@@ -115,7 +114,6 @@ const options = {
 
 const genreChoices = options.styles
 
-
 function Option({
                   label,
                   selected,
@@ -163,7 +161,6 @@ function Option({
   )
 }
 
-
 function App() {
   const [page, setPage] = useState<Page>('landing')
   const [selectedGenres, setSelectedGenres] = useState<string[]>([])
@@ -187,6 +184,7 @@ function App() {
 
   useEffect(() => {
     const query = actorInput.trim()
+
     if (page !== 'questionnaire' || step !== 6 || query.length < 2) {
       setActorSuggestions([])
       setActorSearchLoading(false)
@@ -196,27 +194,51 @@ function App() {
     }
 
     const controller = new AbortController()
+
     const timer = window.setTimeout(async () => {
       setActorSearchLoading(true)
       setActorSearchError('')
+
       try {
         const response = await fetch(
             `${API_URL}/api/people/search?query=${encodeURIComponent(query)}`,
             { signal: controller.signal },
         )
-        const data = (await response.json()) as { results?: PersonSuggestion[]; error?: string }
-        if (!response.ok) throw new Error(data.error || 'Could not search for people.')
-        setActorSuggestions((data.results ?? []).filter(
-            (person) => !answers.actors.some((actor) => actor.toLocaleLowerCase() === person.name.toLocaleLowerCase()),
-        ))
+
+        const data = (await response.json()) as {
+          results?: PersonSuggestion[]
+          error?: string
+        }
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Could not search for people.')
+        }
+
+        setActorSuggestions(
+            (data.results ?? []).filter(
+                (person) =>
+                    !answers.actors.some(
+                        (actor) =>
+                            actor.toLocaleLowerCase() ===
+                            person.name.toLocaleLowerCase(),
+                    ),
+            ),
+        )
+
         setActiveActorSuggestion(-1)
       } catch (err) {
         if (!controller.signal.aborted) {
           setActorSuggestions([])
-          setActorSearchError(err instanceof Error ? err.message : 'Could not search for people.')
+          setActorSearchError(
+              err instanceof Error
+                  ? err.message
+                  : 'Could not search for people.',
+          )
         }
       } finally {
-        if (!controller.signal.aborted) setActorSearchLoading(false)
+        if (!controller.signal.aborted) {
+          setActorSearchLoading(false)
+        }
       }
     }, 300)
 
@@ -241,16 +263,26 @@ function App() {
           ? [...selectedGenres]
           : previous.styles,
     }))
+
     setStep(0)
     setRecommendationMode('personalized')
     setPage('questionnaire')
   }
 
   const updateAnswer = (
-      key: 'mood' | 'era' | 'acclaim' | 'origin' | 'runtime' | 'pacing',
+      key:
+          | 'mood'
+          | 'era'
+          | 'acclaim'
+          | 'origin'
+          | 'runtime'
+          | 'pacing',
       value: string,
   ) => {
-    setAnswers((previous) => ({ ...previous, [key]: value }))
+    setAnswers((previous) => ({
+      ...previous,
+      [key]: value,
+    }))
   }
 
   const toggleStyle = (style: string) => {
@@ -264,26 +296,64 @@ function App() {
 
   const addActor = (person?: PersonSuggestion) => {
     const name = (person?.name ?? actorInput).trim()
-    if (!name || answers.actors.some((actor) => actor.toLocaleLowerCase() === name.toLocaleLowerCase())) return
-    setAnswers((previous) => ({ ...previous, actors: [...previous.actors, name] }))
+
+    if (
+        !name ||
+        answers.actors.some(
+            (actor) =>
+                actor.toLocaleLowerCase() === name.toLocaleLowerCase(),
+        )
+    ) {
+      return
+    }
+
+    setAnswers((previous) => ({
+      ...previous,
+      actors: [...previous.actors, name],
+    }))
+
     setActorInput('')
     setActorSuggestions([])
     setActorSearchError('')
     setActiveActorSuggestion(-1)
   }
 
-  const handleActorInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleActorInputKeyDown = (
+      event: React.KeyboardEvent<HTMLInputElement>,
+  ) => {
     if (event.key === 'ArrowDown' && actorSuggestions.length > 0) {
       event.preventDefault()
-      setActiveActorSuggestion((current) => (current + 1) % actorSuggestions.length)
-    } else if (event.key === 'ArrowUp' && actorSuggestions.length > 0) {
+
+      setActiveActorSuggestion(
+          (current) => (current + 1) % actorSuggestions.length,
+      )
+    } else if (
+        event.key === 'ArrowUp' &&
+        actorSuggestions.length > 0
+    ) {
       event.preventDefault()
-      setActiveActorSuggestion((current) => current <= 0 ? actorSuggestions.length - 1 : current - 1)
+
+      setActiveActorSuggestion((current) =>
+          current <= 0
+              ? actorSuggestions.length - 1
+              : current - 1,
+      )
     } else if (event.key === 'Enter') {
       event.preventDefault()
-      if (activeActorSuggestion >= 0 && actorSuggestions[activeActorSuggestion]) addActor(actorSuggestions[activeActorSuggestion])
-      else if (actorSuggestions.length === 1) addActor(actorSuggestions[0])
-      else if (actorSuggestions.length === 0 && actorInput.trim()) addActor()
+
+      if (
+          activeActorSuggestion >= 0 &&
+          actorSuggestions[activeActorSuggestion]
+      ) {
+        addActor(actorSuggestions[activeActorSuggestion])
+      } else if (actorSuggestions.length === 1) {
+        addActor(actorSuggestions[0])
+      } else if (
+          actorSuggestions.length === 0 &&
+          actorInput.trim()
+      ) {
+        addActor()
+      }
     } else if (event.key === 'Escape') {
       setActorSuggestions([])
       setActiveActorSuggestion(-1)
@@ -311,12 +381,24 @@ function App() {
     return {
       mode: 'personalized' as const,
       genres: answersOverride.styles,
-      ...(answersOverride.mood.trim() ? { mood: answersOverride.mood.trim() } : {}),
-      ...(answersOverride.era.trim() ? { era: answersOverride.era.trim() } : {}),
-      ...(answersOverride.acclaim.trim() ? { acclaim: answersOverride.acclaim.trim() } : {}),
-      ...(answersOverride.origin.trim() ? { origin: answersOverride.origin.trim() } : {}),
-      ...(answersOverride.runtime.trim() ? { runtime: answersOverride.runtime.trim() } : {}),
-      ...(answersOverride.pacing.trim() ? { pacing: answersOverride.pacing.trim() } : {}),
+      ...(answersOverride.mood.trim()
+          ? { mood: answersOverride.mood.trim() }
+          : {}),
+      ...(answersOverride.era.trim()
+          ? { era: answersOverride.era.trim() }
+          : {}),
+      ...(answersOverride.acclaim.trim()
+          ? { acclaim: answersOverride.acclaim.trim() }
+          : {}),
+      ...(answersOverride.origin.trim()
+          ? { origin: answersOverride.origin.trim() }
+          : {}),
+      ...(answersOverride.runtime.trim()
+          ? { runtime: answersOverride.runtime.trim() }
+          : {}),
+      ...(answersOverride.pacing.trim()
+          ? { pacing: answersOverride.pacing.trim() }
+          : {}),
       actors: answersOverride.actors,
     }
   }
@@ -358,7 +440,12 @@ function App() {
       }
 
       if (!response.ok) {
-        throw new Error(data.error || `Failed to find ${mediaType === 'movie' ? 'movies' : 'TV series'}.`)
+        throw new Error(
+            data.error ||
+            `Failed to find ${
+                mediaType === 'movie' ? 'movies' : 'TV series'
+            }.`,
+        )
       }
 
       setMovies(data.results ?? [])
@@ -376,7 +463,13 @@ function App() {
   }
 
   const loadMore = async () => {
-    if (loadingMore || loading || pageNumber >= totalPages) return
+    if (
+        loadingMore ||
+        loading ||
+        pageNumber >= totalPages
+    ) {
+      return
+    }
 
     const nextPage = pageNumber + 1
     setLoadingMore(true)
@@ -404,14 +497,20 @@ function App() {
       }
 
       if (!response.ok) {
-        throw new Error(data.error || 'Could not load more movies.')
+        throw new Error(
+            data.error || 'Could not load more movies.',
+        )
       }
 
       setMovies((previous) => {
-        const existingIds = new Set(previous.map((movie) => movie.id))
+        const existingIds = new Set(
+            previous.map((movie) => movie.id),
+        )
+
         const newMovies = (data.results ?? []).filter(
             (movie) => !existingIds.has(movie.id),
         )
+
         return [...previous, ...newMovies]
       })
 
@@ -429,7 +528,8 @@ function App() {
   }
 
   const startGenreSearch = () => startSearch('genres')
-  const startPersonalizedSearch = () => startSearch('personalized')
+  const startPersonalizedSearch = () =>
+      startSearch('personalized')
 
   const next = () => {
     if (step === questions.length - 1) {
@@ -455,7 +555,10 @@ function App() {
     } else if (step === 2) {
       updateAnswer('acclaim', '')
     } else if (step === 3) {
-      setAnswers((previous) => ({ ...previous, styles: [] }))
+      setAnswers((previous) => ({
+        ...previous,
+        styles: [],
+      }))
     } else if (step === 4) {
       updateAnswer('origin', '')
     } else if (step === 5) {
@@ -465,9 +568,16 @@ function App() {
         pacing: '',
       }))
     } else if (step === 6) {
-      const answersWithoutActors = { ...answers, actors: [] }
+      const answersWithoutActors = {
+        ...answers,
+        actors: [],
+      }
+
       setAnswers(answersWithoutActors)
-      startSearch('personalized', answersWithoutActors)
+      startSearch(
+          'personalized',
+          answersWithoutActors,
+      )
       return
     }
 
@@ -504,7 +614,9 @@ function App() {
   ] as const
 
   const scalarKey = scalarKeys[step]
-  const selectedValue = scalarKey ? answers[scalarKey] : ''
+  const selectedValue = scalarKey
+      ? answers[scalarKey]
+      : ''
 
   const isSelected = (value: string) =>
       step === 3
@@ -564,15 +676,18 @@ function App() {
         <main className="app">
           <section className="flow-panel genre-panel">
             <div className="flow-copy page-heading">
-              <span className="step-label">LET’S START WITH A GENRE</span>
+            <span className="step-label">
+              LET’S START WITH A GENRE
+            </span>
+
               <h1>What do you feel like watching?</h1>
+
               <p className="question-hint">
                 Choose one or more genres, or let us personalize your picks.
               </p>
             </div>
 
             <div className="genre-grid">
-
               {genreChoices.map((genre) => (
                   <Option
                       key={genre}
@@ -582,7 +697,6 @@ function App() {
                       genreWave
                   />
               ))}
-
             </div>
 
             <div className="genre-actions">
@@ -598,7 +712,9 @@ function App() {
                   type="button"
                   className="next-button"
                   onClick={startGenreSearch}
-                  disabled={selectedGenres.length === 0 || loading}
+                  disabled={
+                      selectedGenres.length === 0 || loading
+                  }
               >
                 Find a movie
               </button>
@@ -621,72 +737,160 @@ function App() {
         <main className="app">
           <section className="flow-panel results-panel">
             <header className="app-header">
-              <span className="eyebrow">YOUR RECOMMENDATIONS</span>
+            <span className="eyebrow">
+              YOUR RECOMMENDATIONS
+            </span>
+
               <h1>Picked for you</h1>
             </header>
 
-            <div className={`media-switch ${mediaType === 'tv' ? 'is-tv' : 'is-movie'}`} role="group" aria-label="Recommendation type">
-              <span className="media-switch-indicator" aria-hidden="true" />
-              <button type="button" className={`media-switch-option ${mediaType === 'movie' ? 'active' : ''}`} aria-pressed={mediaType === 'movie'} onClick={() => mediaType !== 'movie' && startSearch(recommendationMode, answers, 'movie')}>Movies</button>
-              <button type="button" className={`media-switch-option ${mediaType === 'tv' ? 'active' : ''}`} aria-pressed={mediaType === 'tv'} onClick={() => mediaType !== 'tv' && startSearch(recommendationMode, answers, 'tv')}>TV Series</button>
+            <div
+                className={`media-switch ${
+                    mediaType === 'tv'
+                        ? 'is-tv'
+                        : 'is-movie'
+                }`}
+                role="group"
+                aria-label="Recommendation type"
+            >
+            <span
+                className="media-switch-indicator"
+                aria-hidden="true"
+            />
+
+              <button
+                  type="button"
+                  className={`media-switch-option ${
+                      mediaType === 'movie' ? 'active' : ''
+                  }`}
+                  aria-pressed={mediaType === 'movie'}
+                  onClick={() =>
+                      mediaType !== 'movie' &&
+                      startSearch(
+                          recommendationMode,
+                          answers,
+                          'movie',
+                      )
+                  }
+              >
+                Movies
+              </button>
+
+              <button
+                  type="button"
+                  className={`media-switch-option ${
+                      mediaType === 'tv' ? 'active' : ''
+                  }`}
+                  aria-pressed={mediaType === 'tv'}
+                  onClick={() =>
+                      mediaType !== 'tv' &&
+                      startSearch(
+                          recommendationMode,
+                          answers,
+                          'tv',
+                      )
+                  }
+              >
+                TV Series
+              </button>
             </div>
 
             <div className="flow-copy">
               <p className="question-hint">
                 {loading
-                    ? `Finding ${mediaType === 'movie' ? 'movies' : 'TV series'} that match your preferences...`
+                    ? `Finding ${
+                        mediaType === 'movie'
+                            ? 'movies'
+                            : 'TV series'
+                    } that match your preferences...`
                     : error
                         ? 'We could not retrieve recommendations.'
-                        : `${movies.length} ${mediaType === 'movie' ? 'movies' : 'TV series'} loaded`}
+                        : `${movies.length} ${
+                            mediaType === 'movie'
+                                ? 'movies'
+                                : 'TV series'
+                        } loaded`}
               </p>
             </div>
 
-
             {loading && (
-                <div className="result-state" role="status">
+                <div
+                    className="result-state"
+                    role="status"
+                >
                   <span className="loading-spinner" />
-                  <p>Finding {mediaType === 'movie' ? 'movies' : 'TV series'} for you…</p>
-                </div>
-            )}
-
-            {!loading && error && movies.length === 0 && (
-                <div className="result-state error-message" role="alert">
-                  <h3>Something went wrong</h3>
-                  <p>{error}</p>
-                  <button
-                      type="button"
-                      className="next-button"
-                      onClick={() => startSearch(recommendationMode)}
-                  >
-                    Try again
-                  </button>
-                </div>
-            )}
-
-            {!loading && !error && movies.length === 0 && (
-                <div className="result-state">
-                  <h3>No {mediaType === 'movie' ? 'movies' : 'TV series'} found</h3>
                   <p>
-                    Try another genre or change your preferences to discover more
-                    {mediaType === 'movie' ? ' movies.' : ' TV series.'}
+                    Finding{' '}
+                    {mediaType === 'movie'
+                        ? 'movies'
+                        : 'TV series'}{' '}
+                    for you…
                   </p>
                 </div>
             )}
 
+            {!loading &&
+                error &&
+                movies.length === 0 && (
+                    <div
+                        className="result-state error-message"
+                        role="alert"
+                    >
+                      <h3>Something went wrong</h3>
+
+                      <p>{error}</p>
+
+                      <button
+                          type="button"
+                          className="next-button"
+                          onClick={() =>
+                              startSearch(recommendationMode)
+                          }
+                      >
+                        Try again
+                      </button>
+                    </div>
+                )}
+
+            {!loading &&
+                !error &&
+                movies.length === 0 && (
+                    <div className="result-state">
+                      <h3>
+                        No{' '}
+                        {mediaType === 'movie'
+                            ? 'movies'
+                            : 'TV series'}{' '}
+                        found
+                      </h3>
+
+                      <p>
+                        Try another genre or change your
+                        preferences to discover more
+                        {mediaType === 'movie'
+                            ? ' movies.'
+                            : ' TV series.'}
+                      </p>
+                    </div>
+                )}
+
             {movies.length > 0 && (
                 <div className="movie-grid">
                   {movies.map((movie) => (
-
-                      <article className="movie-card" key={movie.id}>
+                      <article
+                          className="movie-card"
+                          key={movie.id}
+                      >
                         <div
                             className="movie-ambient"
                             aria-hidden="true"
                             style={{
-                              backgroundImage: movie.backdropUrl
-                                  ? `url("${movie.backdropUrl}")`
-                                  : movie.posterUrl
-                                      ? `url("${movie.posterUrl}")`
-                                      : 'none',
+                              backgroundImage:
+                                  movie.backdropUrl
+                                      ? `url("${movie.backdropUrl}")`
+                                      : movie.posterUrl
+                                          ? `url("${movie.posterUrl}")`
+                                          : 'none',
                             }}
                         />
 
@@ -705,57 +909,87 @@ function App() {
 
                         <div className="movie-info">
                           <h3>{movie.title}</h3>
+
                           <p className="movie-meta">
-                            {movie.releaseDate?.slice(0, 4) || 'Release year unknown'}
+                            {movie.releaseDate?.slice(0, 4) ||
+                                'Release year unknown'}
                             {' · '}
+
                             <span className="movie-rating">
-        ★ {Number(movie.rating || 0).toFixed(1)}
-      </span>
+                        ★{' '}
+                              {Number(movie.rating || 0).toFixed(1)}
+                      </span>
                           </p>
+
                           <p className="movie-overview">
-                            {movie.overview || 'No description available.'}
+                            {movie.overview ||
+                                'No description available.'}
                           </p>
+
                           <a
                               className="movie-link"
-                              href={`https://www.themoviedb.org/${mediaType === 'movie' ? 'movie' : 'tv'}/${movie.id}`}
+                              href={`https://www.themoviedb.org/${
+                                  mediaType === 'movie'
+                                      ? 'movie'
+                                      : 'tv'
+                              }/${movie.id}`}
                               target="_blank"
                               rel="noreferrer"
                           >
-                            View {mediaType === 'movie' ? 'movie' : 'series'} <span aria-hidden="true">↗</span>
+                            View{' '}
+                            <span aria-hidden="true">
+                        ↗︎
+                      </span>
                           </a>
                         </div>
                       </article>
-
                   ))}
                 </div>
             )}
 
             {error && movies.length > 0 && (
-                <p className="load-more-error" role="alert">
+                <p
+                    className="load-more-error"
+                    role="alert"
+                >
                   {error}
                 </p>
             )}
 
-            {!loading && !error && pageNumber < totalPages && (
-                <div className="load-more-container">
-                  <button
-                      type="button"
-                      className="next-button load-more-button"
-                      onClick={loadMore}
-                      disabled={loadingMore}
-                  >
-                    {loadingMore ? 'Loading…' : 'Load more'}
-                  </button>
-                  <p className="question-hint">
-                    Showing {movies.length} {mediaType === 'movie' ? 'movies' : 'series'}
-                  </p>
-                </div>
-            )}
+            {!loading &&
+                !error &&
+                pageNumber < totalPages && (
+                    <div className="load-more-container">
+                      <button
+                          type="button"
+                          className="next-button load-more-button"
+                          onClick={loadMore}
+                          disabled={loadingMore}
+                      >
+                        {loadingMore
+                            ? 'Loading…'
+                            : 'Load more'}
+                      </button>
+
+                      <p className="question-hint">
+                        Showing {movies.length}{' '}
+                        {mediaType === 'movie'
+                            ? 'movies'
+                            : 'series'}
+                      </p>
+                    </div>
+                )}
 
             {loadingMore && (
-                <div className="result-state" role="status">
+                <div
+                    className="result-state"
+                    role="status"
+                >
                   <span className="loading-spinner" />
-                  <p>Loading more recommendations…</p>
+
+                  <p>
+                    Loading more recommendations…
+                  </p>
                 </div>
             )}
 
@@ -767,6 +1001,7 @@ function App() {
               >
                 Back to genres
               </button>
+
               <button
                   type="button"
                   className="next-button"
@@ -803,8 +1038,12 @@ function App() {
           <span>
             QUESTION {step + 1} OF {questions.length}
           </span>
+
             <span>
-            {Math.round(((step + 1) / questions.length) * 100)}%
+            {Math.round(
+                ((step + 1) / questions.length) * 100,
+            )}
+              %
           </span>
           </div>
 
@@ -819,14 +1058,32 @@ function App() {
             <div
                 className="progress-fill"
                 style={{
-                  width: `${((step + 1) / questions.length) * 100}%`,
+                  width: `${
+                      ((step + 1) / questions.length) * 100
+                  }%`,
                 }}
             />
           </div>
 
           <div className="question-content">
-            <span className="step-label">STEP {step + 1}</span>
-            <h1>{step === 1 ? `What era of ${mediaType === 'movie' ? 'movies' : 'TV series'} do you prefer?` : step === 5 ? (mediaType === 'movie' ? 'How long should the movie be?' : 'Optional preferences') : questions[step]}</h1>
+          <span className="step-label">
+            STEP {step + 1}
+          </span>
+
+            <h1>
+              {step === 1
+                  ? `What era of ${
+                      mediaType === 'movie'
+                          ? 'movies'
+                          : 'TV series'
+                  } do you prefer?`
+                  : step === 5
+                      ? mediaType === 'movie'
+                          ? 'How long should the movie be?'
+                          : 'Optional preferences'
+                      : questions[step]}
+            </h1>
+
             <p className="question-hint">
               {step === 3
                   ? 'Choose as many genres as you like.'
@@ -835,32 +1092,59 @@ function App() {
                       : 'Choose one option or skip if you have no preference.'}
             </p>
 
-            {step === 0 && renderOptions(options.mood)}
-            {step === 1 && renderOptions(options.era)}
-            {step === 2 && renderOptions(options.acclaim)}
-            {step === 3 && renderOptions(options.styles)}
-            {step === 4 && renderOptions(options.origin)}
+            {step === 0 &&
+                renderOptions(options.mood)}
+
+            {step === 1 &&
+                renderOptions(options.era)}
+
+            {step === 2 &&
+                renderOptions(options.acclaim)}
+
+            {step === 3 &&
+                renderOptions(options.styles)}
+
+            {step === 4 &&
+                renderOptions(options.origin)}
 
             {step === 5 && (
                 <>
                   {mediaType === 'movie' ? (
                       <>
-                        <h3 className="sub-question">Preferred runtime</h3>
+                        <h3 className="sub-question">
+                          Preferred runtime
+                        </h3>
+
                         {renderOptions(options.runtime)}
-                        <h3 className="sub-question">Preferred pacing</h3>
+
+                        <h3 className="sub-question">
+                          Preferred pacing
+                        </h3>
+
                         <div className="options-grid">
                           {options.pacing.map((item) => (
                               <Option
                                   key={item}
                                   label={item}
-                                  selected={answers.pacing === item}
-                                  onClick={() => updateAnswer('pacing', item)}
+                                  selected={
+                                      answers.pacing === item
+                                  }
+                                  onClick={() =>
+                                      updateAnswer(
+                                          'pacing',
+                                          item,
+                                      )
+                                  }
                               />
                           ))}
                         </div>
                       </>
                   ) : (
-                      <p className="question-hint">Runtime and pacing preferences are movie-only for now. You can skip this step.</p>
+                      <p className="question-hint">
+                        Runtime and pacing preferences are
+                        movie-only for now. You can skip this
+                        step.
+                      </p>
                   )}
                 </>
             )}
@@ -871,38 +1155,143 @@ function App() {
                     <div className="actor-entry">
                       <input
                           value={actorInput}
-                          onChange={(event) => { setActorInput(event.target.value); setActorSearchError('') }}
-                          onKeyDown={handleActorInputKeyDown}
+                          onChange={(event) => {
+                            setActorInput(
+                                event.target.value,
+                            )
+                            setActorSearchError('')
+                          }}
+                          onKeyDown={
+                            handleActorInputKeyDown
+                          }
                           placeholder="Start typing a name…"
                           aria-label="Search actor or actress"
                           aria-autocomplete="list"
-                          aria-expanded={actorSuggestions.length > 0}
+                          aria-expanded={
+                              actorSuggestions.length > 0
+                          }
                           aria-controls="actor-suggestions"
-                          aria-activedescendant={activeActorSuggestion >= 0 ? `actor-suggestion-${actorSuggestions[activeActorSuggestion]?.id}` : undefined}
+                          aria-activedescendant={
+                            activeActorSuggestion >= 0
+                                ? `actor-suggestion-${
+                                    actorSuggestions[
+                                        activeActorSuggestion
+                                        ]?.id
+                                }`
+                                : undefined
+                          }
                           maxLength={100}
                       />
-                      <button type="button" className="add-button" onClick={() => addActor()}
-                              disabled={!actorInput.trim() || actorSuggestions.length > 0}
-                              title="Add typed name if no suggestions are shown">Add</button>
+
+                      <button
+                          type="button"
+                          className="add-button"
+                          onClick={() => addActor()}
+                          disabled={
+                              !actorInput.trim() ||
+                              actorSuggestions.length > 0
+                          }
+                          title="Add typed name if no suggestions are shown"
+                      >
+                        Add
+                      </button>
                     </div>
-                    {actorSearchLoading && <p className="actor-search-status" role="status">Searching TMDb…</p>}
-                    {actorSearchError && <p className="actor-search-status actor-search-error" role="status">{actorSearchError}</p>}
-                    {!actorSearchLoading && !actorSearchError && actorInput.trim().length >= 2 && actorSuggestions.length === 0 && (
-                        <p className="actor-search-status">No matching people found. You can add the name manually.</p>
+
+                    {actorSearchLoading && (
+                        <p
+                            className="actor-search-status"
+                            role="status"
+                        >
+                          Searching TMDb…
+                        </p>
                     )}
+
+                    {actorSearchError && (
+                        <p
+                            className="actor-search-status actor-search-error"
+                            role="status"
+                        >
+                          {actorSearchError}
+                        </p>
+                    )}
+
+                    {!actorSearchLoading &&
+                        !actorSearchError &&
+                        actorInput.trim().length >= 2 &&
+                        actorSuggestions.length === 0 && (
+                            <p className="actor-search-status">
+                              No matching people found. You can
+                              add the name manually.
+                            </p>
+                        )}
+
                     {actorSuggestions.length > 0 && (
-                        <div className="actor-suggestions" id="actor-suggestions" role="listbox" aria-label="Matching people">
-                          {actorSuggestions.slice(0, 3).map((person, index) => (
-                              <button type="button" id={`actor-suggestion-${person.id}`}
-                                      className={`actor-suggestion ${activeActorSuggestion === index ? 'active' : ''}`}
-                                      key={person.id} role="option" aria-selected={activeActorSuggestion === index}
-                                      onMouseDown={(event) => event.preventDefault()} onClick={() => addActor(person)}>
-                                {person.profileUrl ? <img src={person.profileUrl} alt="" className="actor-suggestion-avatar" loading="lazy" />
-                                    : <span className="actor-suggestion-avatar actor-suggestion-placeholder" aria-hidden="true">?</span>}
-                                <span className="actor-suggestion-copy"><strong>{person.name}</strong><small>{person.knownForDepartment || 'Performer'}</small></span>
-                                <span className="actor-suggestion-add" aria-hidden="true">+</span>
-                              </button>
-                          ))}
+                        <div
+                            className="actor-suggestions"
+                            id="actor-suggestions"
+                            role="listbox"
+                            aria-label="Matching people"
+                        >
+                          {actorSuggestions
+                              .slice(0, 3)
+                              .map((person, index) => (
+                                  <button
+                                      type="button"
+                                      id={`actor-suggestion-${person.id}`}
+                                      className={`actor-suggestion ${
+                                          activeActorSuggestion ===
+                                          index
+                                              ? 'active'
+                                              : ''
+                                      }`}
+                                      key={person.id}
+                                      role="option"
+                                      aria-selected={
+                                          activeActorSuggestion ===
+                                          index
+                                      }
+                                      onMouseDown={(event) =>
+                                          event.preventDefault()
+                                      }
+                                      onClick={() =>
+                                          addActor(person)
+                                      }
+                                  >
+                                    {person.profileUrl ? (
+                                        <img
+                                            src={person.profileUrl}
+                                            alt=""
+                                            className="actor-suggestion-avatar"
+                                            loading="lazy"
+                                        />
+                                    ) : (
+                                        <span
+                                            className="actor-suggestion-avatar actor-suggestion-placeholder"
+                                            aria-hidden="true"
+                                        >
+                              ?
+                            </span>
+                                    )}
+
+                                    <span className="actor-suggestion-copy">
+                            <strong>
+                              {person.name}
+                            </strong>
+
+                            <small>
+                              {person.knownForDepartment ||
+                                  'Performer'}
+                            </small>
+                          </span>
+
+                                    <span
+                                        className="actor-suggestion-add"
+                                        aria-hidden="true"
+                                    >
+                            +
+                          </span>
+                                  </button>
+                              ))}
                         </div>
                     )}
                   </div>
@@ -914,18 +1303,25 @@ function App() {
                                 type="button"
                                 className="actor-chip"
                                 key={actor}
-                                onClick={() => removeActor(actor)}
+                                onClick={() =>
+                                    removeActor(actor)
+                                }
                                 aria-label={`Remove ${actor}`}
                             >
-                              {actor} <span>×</span>
+                              {actor}{' '}
+                              <span>×</span>
                             </button>
                         ))}
                       </div>
                   )}
 
                   <p className="actor-note">
-                    Results will only include {mediaType === 'movie' ? 'movies' : 'TV series'} featuring the actors
-                    you add, including credited supporting roles.
+                    Results will only include{' '}
+                    {mediaType === 'movie'
+                        ? 'movies'
+                        : 'TV series'}{' '}
+                    featuring the actors you add, including
+                    credited supporting roles.
                   </p>
                 </div>
             )}
@@ -939,6 +1335,7 @@ function App() {
             >
               Back
             </button>
+
             <button
                 type="button"
                 className="skip-button"
@@ -946,6 +1343,7 @@ function App() {
             >
               Skip
             </button>
+
             <button
                 type="button"
                 className="next-button"
@@ -960,7 +1358,5 @@ function App() {
       </main>
   )
 }
-
-
 
 export default App
